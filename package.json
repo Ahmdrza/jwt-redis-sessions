@@ -16,6 +16,10 @@
   ],
   "author": "Ahmad Raza",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ahmdrza/jwt-redis-sessions"
+  },
   "dependencies": {
     "jsonwebtoken": "^8.5.1",
     "redis": "^3.0.2"
