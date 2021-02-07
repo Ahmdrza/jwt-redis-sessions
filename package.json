@@ -1,6 +1,6 @@
 {
   "name": "jwt-redis-sessions",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Generate JWT token and manage sessions using Redis",
   "main": "index.js",
   "scripts": {
