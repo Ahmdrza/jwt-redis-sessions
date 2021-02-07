@@ -1,0 +1,23 @@
+{
+  "name": "jwt-redis-sessions",
+  "version": "0.0.3",
+  "description": "Generate JWT token and manage sessions using Redis",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "JWT",
+    "Redis",
+    "Session",
+    "Nodejs",
+    "Auth",
+    "Token"
+  ],
+  "author": "Ahmad Raza",
+  "license": "MIT",
+  "dependencies": {
+    "jsonwebtoken": "^8.5.1",
+    "redis": "^3.0.2"
+  }
+}
