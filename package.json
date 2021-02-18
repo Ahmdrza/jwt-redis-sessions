@@ -1,7 +1,7 @@
 {
   "name": "jwt-redis-sessions",
-  "version": "0.0.5",
-  "description": "Generate JWT token and manage sessions using Redis",
+  "version": "0.0.7",
+  "description": "Generate and verify JWT tokens and manage sessions using Redis",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
