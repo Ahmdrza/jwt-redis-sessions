@@ -1,26 +1,22 @@
 const { verifyToken } = require('./jwt.service')
 
 exports.auth = async (req, res, next) => {
-  let errorMessage = null
+  let message = null
 
   if (!req.jrs || !req.jrs.secret) {
-    errorMessage = 'Secret is required'
-  } else if (req.jrs.secret === '') {
-    errorMessage = 'Secret cannot be empty'
+    message = 'Secret is required'
   } else if (typeof req.jrs.secret !== 'string') {
-    errorMessage = 'Secret should be a string'
+    message = 'Secret should be a string'
   } else if (!req.headers.authorization) {
-    errorMessage = 'Authorization header not found'
-  } else if (req.headers.authorization === '') {
-    errorMessage = 'Authorization header cannot be empty'
+    message = 'Authorization header not found'
   } else if (typeof req.headers.authorization !== 'string') {
-    errorMessage = 'Invalid authorization header structure'
+    message = 'Invalid authorization header structure'
   }
 
-  if (errorMessage) {
+  if (message) {
     res.status(401).json({
       status: 'UNAUTHORIZED',
-      message: errorMessage,
+      message: message,
     })
   }
 
