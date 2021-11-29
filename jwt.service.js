@@ -21,42 +21,36 @@ exports.generateToken = (secret, data = {}, dataToStoreInToken = {}) => {
     let expTime = 60 * 60 * 24
     expTime = expTime - timeElapsed
 
-    const currentTime = Math.floor(new Date().getTime() / 1000)
-    const nextDay = currentTime + 86400
-
     const _data = { ...data }
-    _data.lastRefresh = currentTime
-    _data.expiryTime = nextDay
+    _data.lastRefresh = Math.floor(new Date().getTime() / 1000)
 
     redisClient.set(token, JSON.stringify(_data), 'EX', expTime, (err) => {
       if (err) {
-        reject({ message: 'REDIS_ERROR', details: err })
+        reject({ message: 'Redis encountered an error', details: err })
       }
       resolve(token)
     })
   })
 }
 
-exports.verifyToken = (secret, token) => {
+exports.verifyToken = (token) => {
   return new Promise((resolve, reject) => {
-    if (typeof secret !== 'string') {
-      reject({ message: 'Secret should be a string' })
+    if (!process.env.JWT_SECRET) {
+      reject({ message: 'Secret is required' })
     }
 
-    if (secret === '') {
-      reject({ message: 'Secret cannot by empty' })
-    }
+    jwt.verify(token, process.env.JWT_SECRET)
 
-    jwt.verify(token, secret)
     redisClient.get(token, function (err, reply) {
       if (err) reject({ message: 'Token not found' })
       if (reply) {
         const tokenData = JSON.parse(reply)
-        let expiryTime = tokenData.expiryTime
+        let lastRefresh = tokenData.lastRefresh
         var currentTime = Math.floor(new Date().getTime() / 1000)
-        const diff = expiryTime - currentTime
+        const diff = lastRefresh - currentTime
+
         if (diff < 0) {
-          reject({ message: 'Token expired' })
+          reject({ message: 'Authorization token expired' })
         }
 
         if (diff < 3600) {
@@ -77,13 +71,13 @@ exports.verifyToken = (secret, token) => {
           expiryTime,
           (err) => {
             if (err) {
-              reject({ message: 'REDIS_ERROR', details: err })
+              reject({ message: 'Redis encountered an error', details: err })
             }
-            resolve('Success')
+            resolve('success')
           }
         )
       } else {
-        reject({ message: 'Token not found' })
+        reject({ message: 'Authorization token not found' })
       }
     })
   })

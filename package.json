@@ -1,6 +1,6 @@
 {
   "name": "jwt-redis-sessions",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "description": "Generate and verify JWT tokens and manage sessions using Redis",
   "main": "index.js",
   "scripts": {
@@ -21,6 +21,7 @@
     "url": "https://github.com/Ahmdrza/jwt-redis-sessions"
   },
   "dependencies": {
+    "dotenv": "^10.0.0",
     "jsonwebtoken": "^8.5.1",
     "redis": "^3.0.2"
   }
