@@ -1,6 +1,6 @@
-const { verifyToken } = require('./jwt.service')
+const { refreshToken } = require('./jwt.service')
 
-exports.auth = async (req, res, next) => {
+exports.refresh = async (req, res, next) => {
   let message = null
 
   if (!process.env.JWT_SECRET) {
@@ -30,8 +30,11 @@ exports.auth = async (req, res, next) => {
   }
 
   try {
-    await verifyToken(splitHeaderData[1])
-    return next()
+    const token = await refreshToken(splitHeaderData[1])
+    return res.status(200).json({
+      status: 'SUCCESS',
+      token,
+    })
   } catch (error) {
     return res.status(401).json({
       status: 'UNAUTHORIZED',
