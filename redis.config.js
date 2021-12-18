@@ -1,3 +1,5 @@
-const redis = require("redis");
+const redis = require('redis')
 
-exports.redisClient = redis.createClient();
+const redisClient = redis.createClient()
+
+exports.redisClient = async () => await redisClient.connect()
