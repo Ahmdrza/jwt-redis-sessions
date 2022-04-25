@@ -20,7 +20,7 @@ exports.generateToken = async (data = {}) => {
     })
     return token
   } catch (error) {
-    throw { message: 'Redis encountered an error', details: err }
+    throw { message: 'Redis encountered an error', details: error }
   }
 }
 
@@ -35,7 +35,7 @@ exports.verifyToken = async (token) => {
       throw { message: 'Token not found' }
     }
   } catch (error) {
-    throw { message: 'Redis encountered an error', details: err }
+    throw { message: 'Redis encountered an error', details: error }
   }
 }
 
@@ -53,6 +53,6 @@ exports.refreshToken = async (token) => {
       throw { message: 'Token not found' }
     }
   } catch (error) {
-    throw { message: 'Redis encountered an error', details: err }
+    throw { message: 'Redis encountered an error', details: error }
   }
 }
