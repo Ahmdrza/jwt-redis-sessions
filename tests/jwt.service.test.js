@@ -196,8 +196,10 @@ describe('JWT Service', () => {
     })
 
     it('should return true for blacklisted token', async () => {
-      // Manually add token to blacklist
-      mockRedisStore.set('jwt-redis-sessions:blacklist:some-token', { value: '1' })
+      // Manually add token to blacklist using the same key format the service uses
+      const { redisKeys } = require('../utils')
+      const blacklistKey = redisKeys.blacklistKey('some-token')
+      mockRedisStore.set(blacklistKey, { value: '1' })
 
       const result = await jwtService.isTokenBlacklisted('some-token')
       expect(result).toBe(true)

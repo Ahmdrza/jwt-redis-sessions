@@ -34,6 +34,7 @@ describe('Refresh Handlers', () => {
       expect(mockRes.status).toHaveBeenCalledWith(200)
       expect(mockRes.json).toHaveBeenCalledWith({
         status: 'SUCCESS',
+        message: 'Token refreshed successfully',
         data: expect.objectContaining({
           accessToken: expect.any(String),
           refreshToken: expect.any(String),

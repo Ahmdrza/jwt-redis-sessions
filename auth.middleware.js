@@ -1,19 +1,7 @@
 const { verifyToken } = require('./jwt.service')
 const { validateAuthHeader, validateSecret } = require('./validation.util')
+const { sendErrorResponse } = require('./utils')
 const config = require('./config')
-
-// Error response helper
-const sendErrorResponse = (res, error) => {
-  const statusCode = error.statusCode || 401
-  const code = error.code || 'UNAUTHORIZED'
-
-  return res.status(statusCode).json({
-    status: code,
-    message: error.message,
-    // Only include error details in development
-    ...(process.env.NODE_ENV === 'development' && { details: error.stack }),
-  })
-}
 
 // Main authentication middleware
 exports.auth = async (req, res, next) => {

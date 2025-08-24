@@ -1,18 +1,6 @@
 const { revokeToken, revokeAllUserTokens } = require('./jwt.service')
 const { validateAuthHeader } = require('./validation.util')
-
-// Error response helper
-const sendErrorResponse = (res, error) => {
-  const statusCode = error.statusCode || 401
-  const code = error.code || 'UNAUTHORIZED'
-
-  return res.status(statusCode).json({
-    status: code,
-    message: error.message,
-    // Only include error details in development
-    ...(process.env.NODE_ENV === 'development' && { details: error.stack }),
-  })
-}
+const { sendErrorResponse, sendSuccessResponse } = require('./utils')
 
 // Logout current session
 exports.logout = async (req, res) => {
@@ -23,10 +11,7 @@ exports.logout = async (req, res) => {
     // Revoke the token
     const result = await revokeToken(token)
 
-    return res.status(200).json({
-      status: 'SUCCESS',
-      message: result.message,
-    })
+    return sendSuccessResponse(res, null, result.message)
   } catch (error) {
     return sendErrorResponse(res, error)
   }
@@ -46,10 +31,7 @@ exports.logoutAll = async (req, res) => {
     // Revoke all tokens for the user
     const result = await revokeAllUserTokens(userId)
 
-    return res.status(200).json({
-      status: 'SUCCESS',
-      message: result.message,
-    })
+    return sendSuccessResponse(res, null, result.message)
   } catch (error) {
     return sendErrorResponse(res, error)
   }

@@ -63,35 +63,47 @@ const createMockRedisHelper = () => {
   const config = require('../config')
 
   const setWithExpiry = jest.fn(async (key, value, ttl) => {
-    const prefixedKey = `${config.redis.keyPrefix}${key}`
-    mockRedisStore.set(prefixedKey, { value, ttl })
+    // Handle both prefixed and non-prefixed keys
+    const finalKey = key.startsWith(config.redis.keyPrefix)
+      ? key
+      : `${config.redis.keyPrefix}${key}`
+    mockRedisStore.set(finalKey, { value, ttl })
     // Also call the client method for test verification
-    await mockRedisClient.set(prefixedKey, value, { EX: ttl })
+    await mockRedisClient.set(finalKey, value, { EX: ttl })
     return 'OK'
   })
 
   const get = jest.fn(async (key) => {
-    const prefixedKey = `${config.redis.keyPrefix}${key}`
-    const item = mockRedisStore.get(prefixedKey)
+    // Handle both prefixed and non-prefixed keys
+    const finalKey = key.startsWith(config.redis.keyPrefix)
+      ? key
+      : `${config.redis.keyPrefix}${key}`
+    const item = mockRedisStore.get(finalKey)
     // Also call the client method for test verification
-    await mockRedisClient.get(prefixedKey)
+    await mockRedisClient.get(finalKey)
     return item ? item.value : null
   })
 
   const del = jest.fn(async (key) => {
-    const prefixedKey = `${config.redis.keyPrefix}${key}`
-    const existed = mockRedisStore.has(prefixedKey)
-    mockRedisStore.delete(prefixedKey)
+    // Handle both prefixed and non-prefixed keys
+    const finalKey = key.startsWith(config.redis.keyPrefix)
+      ? key
+      : `${config.redis.keyPrefix}${key}`
+    const existed = mockRedisStore.has(finalKey)
+    mockRedisStore.delete(finalKey)
     // Also call the client method for test verification
-    await mockRedisClient.del(prefixedKey)
+    await mockRedisClient.del(finalKey)
     return existed ? 1 : 0
   })
 
   const exists = jest.fn(async (key) => {
-    const prefixedKey = `${config.redis.keyPrefix}${key}`
-    const result = mockRedisStore.has(prefixedKey) ? 1 : 0
+    // Handle both prefixed and non-prefixed keys
+    const finalKey = key.startsWith(config.redis.keyPrefix)
+      ? key
+      : `${config.redis.keyPrefix}${key}`
+    const result = mockRedisStore.has(finalKey) ? 1 : 0
     // Also call the client method for test verification
-    await mockRedisClient.exists(prefixedKey)
+    await mockRedisClient.exists(finalKey)
     return result
   })
 

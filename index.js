@@ -7,6 +7,7 @@ const authMiddleware = require('./auth.middleware')
 const refreshHandlers = require('./refresh')
 const logoutHandlers = require('./logout')
 const errors = require('./errors')
+const utils = require('./utils')
 
 // Initialize Redis connection
 let isInitialized = false
@@ -57,6 +58,9 @@ exports.RedisError = errors.RedisError
 exports.config = config
 exports.initialize = initialize
 exports.closeRedisConnection = redisConfig.closeRedisConnection
+
+// Utility exports
+exports.utils = utils
 
 // Graceful shutdown handler
 const gracefulShutdown = async () => {

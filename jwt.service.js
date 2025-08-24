@@ -2,6 +2,13 @@ const jwt = require('jsonwebtoken')
 const crypto = require('crypto')
 const config = require('./config')
 const { validateSecret, validateTokenData, constantTimeCompare } = require('./validation.util')
+const {
+  verifyJwtToken,
+  handleJwtError,
+  getUnixTimestamp,
+  getISOTimestamp,
+  redisKeys,
+} = require('./utils')
 const { AuthError, TokenError } = require('./errors')
 const redisHelper = require('./redis.config')
 
@@ -18,7 +25,7 @@ exports.generateToken = async (data = {}) => {
     validateTokenData(data)
 
     const sessionId = generateSessionId()
-    const now = Math.floor(Date.now() / 1000)
+    const now = getUnixTimestamp()
 
     // Create JWT payload with claims
     const payload = {
@@ -55,19 +62,19 @@ exports.generateToken = async (data = {}) => {
     const sessionData = {
       ...data,
       sessionId,
-      createdAt: new Date().toISOString(),
-      lastActivity: new Date().toISOString(),
+      createdAt: getISOTimestamp(),
+      lastActivity: getISOTimestamp(),
     }
 
     await redisHelper.setWithExpiry(
-      `session:${sessionId}`,
+      redisKeys.sessionKey(sessionId),
       JSON.stringify(sessionData),
       config.redis.sessionTTL
     )
 
     // Store refresh token in Redis
     await redisHelper.setWithExpiry(
-      `refresh:${sessionId}`,
+      redisKeys.refreshKey(sessionId),
       refreshToken,
       config.redis.refreshTokenTTL
     )
@@ -97,28 +104,11 @@ exports.verifyToken = async (token) => {
       throw new TokenError('Token has been revoked')
     }
 
-    // Verify JWT with explicit algorithm enforcement
-    const decoded = jwt.verify(token, config.jwt.secret, {
-      algorithms: ['HS256'], // Only allow HMAC with SHA-256
-      issuer: config.jwt.issuer,
-      audience: config.jwt.audience,
-      ignoreNotBefore: false,
-      ignoreExpiration: false,
-      clockTolerance: 0,
-    })
-
-    // Additional security check: ensure algorithm is not 'none'
-    const header = jwt.decode(token, { complete: true })
-    if (!header || header.header.alg === 'none') {
-      throw new TokenError('Invalid token algorithm')
-    }
-
-    if (decoded.type !== 'access') {
-      throw new TokenError('Invalid token type')
-    }
+    // Verify JWT with security checks and type validation
+    const decoded = verifyJwtToken(token, 'access')
 
     // Check if session exists in Redis
-    const sessionData = await redisHelper.get(`session:${decoded.sessionId}`)
+    const sessionData = await redisHelper.get(redisKeys.sessionKey(decoded.sessionId))
 
     if (!sessionData) {
       throw new TokenError('Session not found or expired')
@@ -126,10 +116,10 @@ exports.verifyToken = async (token) => {
 
     // Update last activity
     const session = JSON.parse(sessionData)
-    session.lastActivity = new Date().toISOString()
+    session.lastActivity = getISOTimestamp()
 
     await redisHelper.setWithExpiry(
-      `session:${decoded.sessionId}`,
+      redisKeys.sessionKey(decoded.sessionId),
       JSON.stringify(session),
       config.redis.sessionTTL
     )
@@ -140,16 +130,20 @@ exports.verifyToken = async (token) => {
       session,
     }
   } catch (error) {
-    if (error.name === 'JsonWebTokenError') {
-      throw new TokenError('Invalid token')
-    }
-    if (error.name === 'TokenExpiredError') {
-      throw new TokenError('Token expired')
-    }
+    // Use the standardized JWT error handler if it's a JWT-related error
     if (
+      error.name === 'JsonWebTokenError' ||
+      error.name === 'TokenExpiredError' ||
+      error.name === 'NotBeforeError'
+    ) {
+      throw handleJwtError(error, 'access')
+    }
+    // Pass through known errors
+    if (
+      error instanceof TokenError ||
+      error instanceof AuthError ||
       error.name === 'ValidationError' ||
-      error.name === 'RedisError' ||
-      error.name === 'TokenError'
+      error.name === 'RedisError'
     ) {
       throw error
     }
@@ -162,35 +156,18 @@ exports.refreshToken = async (refreshToken) => {
   try {
     validateSecret(config.jwt.secret)
 
-    // Verify refresh token with explicit algorithm enforcement
-    const decoded = jwt.verify(refreshToken, config.jwt.secret, {
-      algorithms: ['HS256'], // Only allow HMAC with SHA-256
-      issuer: config.jwt.issuer,
-      audience: config.jwt.audience,
-      ignoreNotBefore: false,
-      ignoreExpiration: false,
-      clockTolerance: 0,
-    })
-
-    // Additional security check: ensure algorithm is not 'none'
-    const header = jwt.decode(refreshToken, { complete: true })
-    if (!header || header.header.alg === 'none') {
-      throw new TokenError('Invalid token algorithm')
-    }
-
-    if (decoded.type !== 'refresh') {
-      throw new TokenError('Invalid token type')
-    }
+    // Verify refresh token with security checks and type validation
+    const decoded = verifyJwtToken(refreshToken, 'refresh')
 
     // Check if refresh token exists in Redis
-    const storedRefreshToken = await redisHelper.get(`refresh:${decoded.sessionId}`)
+    const storedRefreshToken = await redisHelper.get(redisKeys.refreshKey(decoded.sessionId))
 
     if (!storedRefreshToken || !constantTimeCompare(storedRefreshToken, refreshToken)) {
       throw new TokenError('Invalid refresh token')
     }
 
     // Get session data
-    const sessionData = await redisHelper.get(`session:${decoded.sessionId}`)
+    const sessionData = await redisHelper.get(redisKeys.sessionKey(decoded.sessionId))
 
     if (!sessionData) {
       throw new TokenError('Session not found or expired')
@@ -199,20 +176,28 @@ exports.refreshToken = async (refreshToken) => {
     const session = JSON.parse(sessionData)
 
     // Delete old refresh token (rotation)
-    await redisHelper.del(`refresh:${decoded.sessionId}`)
+    await redisHelper.del(redisKeys.refreshKey(decoded.sessionId))
 
     // Generate new tokens
     const newTokens = await exports.generateToken(session)
 
     return newTokens
   } catch (error) {
-    if (error.name === 'JsonWebTokenError') {
-      throw new TokenError('Invalid refresh token')
+    // Use the standardized JWT error handler if it's a JWT-related error
+    if (
+      error.name === 'JsonWebTokenError' ||
+      error.name === 'TokenExpiredError' ||
+      error.name === 'NotBeforeError'
+    ) {
+      throw handleJwtError(error, 'refresh')
     }
-    if (error.name === 'TokenExpiredError') {
-      throw new TokenError('Refresh token expired')
-    }
-    if (error.name === 'TokenError' || error.name === 'RedisError') {
+    // Pass through known errors
+    if (
+      error instanceof TokenError ||
+      error instanceof AuthError ||
+      error.name === 'ValidationError' ||
+      error.name === 'RedisError'
+    ) {
       throw error
     }
     throw new AuthError(`Token refresh failed: ${error.message}`)
@@ -231,14 +216,14 @@ exports.revokeToken = async (token) => {
 
     // Delete session and refresh token from Redis
     await Promise.all([
-      redisHelper.del(`session:${decoded.sessionId}`),
-      redisHelper.del(`refresh:${decoded.sessionId}`),
+      redisHelper.del(redisKeys.sessionKey(decoded.sessionId)),
+      redisHelper.del(redisKeys.refreshKey(decoded.sessionId)),
     ])
 
     // Add token to blacklist until it expires
-    const exp = decoded.exp - Math.floor(Date.now() / 1000)
+    const exp = decoded.exp - getUnixTimestamp()
     if (exp > 0) {
-      await redisHelper.setWithExpiry(`blacklist:${token}`, '1', exp)
+      await redisHelper.setWithExpiry(redisKeys.blacklistKey(token), '1', exp)
     }
 
     return { success: true, message: 'Token revoked successfully' }
@@ -254,7 +239,7 @@ exports.revokeToken = async (token) => {
 // Check if token is blacklisted
 exports.isTokenBlacklisted = async (token) => {
   try {
-    const exists = await redisHelper.exists(`blacklist:${token}`)
+    const exists = await redisHelper.exists(redisKeys.blacklistKey(token))
     return exists === 1
   } catch (error) {
     // If Redis fails, consider token valid for safety
@@ -303,8 +288,8 @@ exports.revokeAllUserTokens = async (userId) => {
 
     for (const session of sessions) {
       await Promise.all([
-        redisHelper.del(`session:${session.sessionId}`),
-        redisHelper.del(`refresh:${session.sessionId}`),
+        redisHelper.del(redisKeys.sessionKey(session.sessionId)),
+        redisHelper.del(redisKeys.refreshKey(session.sessionId)),
       ])
     }
 

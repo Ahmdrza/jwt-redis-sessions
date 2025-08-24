@@ -32,6 +32,9 @@ eslint.config.js
 jest.config.js
 tsconfig.json
 
+# Development files not needed in production
+.claude/
+
 # CI/CD
 .github/
 .travis.yml
@@ -41,6 +44,9 @@ tsconfig.json
 docs/
 CHANGELOG.md
 CONTRIBUTING.md
+
+# Extensive documentation - keep only essential README
+docs/
 
 # Build artifacts
 dist/
