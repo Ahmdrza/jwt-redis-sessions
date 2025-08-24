@@ -1,44 +1,37 @@
 const { refreshToken } = require('./jwt.service')
+const { validateAuthHeader, validateSecret } = require('./validation.util')
+const config = require('./config')
 
-exports.refresh = async (req, res, next) => {
-  let message = null
+// Error response helper
+const sendErrorResponse = (res, error) => {
+  const statusCode = error.statusCode || 401
+  const code = error.code || 'UNAUTHORIZED'
 
-  if (!process.env.JWT_SECRET) {
-    message = 'Secret is required'
-  } else if (typeof process.env.JWT_SECRET !== 'string') {
-    message = 'Secret should be a string'
-  } else if (!req.headers.authorization) {
-    message = 'Authorization header not found'
-  } else if (typeof req.headers.authorization !== 'string') {
-    message = 'Invalid authorization header structure'
-  }
+  return res.status(statusCode).json({
+    status: code,
+    message: error.message,
+    // Only include error details in development
+    ...(process.env.NODE_ENV === 'development' && { details: error.stack }),
+  })
+}
 
-  if (message) {
-    return res.status(401).json({
-      status: 'UNAUTHORIZED',
-      message: message,
-    })
-  }
-
-  let splitHeaderData = req.headers.authorization.split(' ')
-
-  if (splitHeaderData.length < 1) {
-    return res.status(401).json({
-      status: 'UNAUTHORIZED',
-      message: 'Invalid authorization header structure',
-    })
-  }
-
+// Refresh token endpoint handler
+exports.refresh = async (req, res) => {
   try {
-    const token = await refreshToken(splitHeaderData[1])
+    // Validate JWT secret
+    validateSecret(config.jwt.secret)
+
+    // Extract and validate refresh token
+    const token = validateAuthHeader(req.headers.authorization)
+
+    // Refresh the token
+    const newTokens = await refreshToken(token)
+
     return res.status(200).json({
       status: 'SUCCESS',
-      token,
+      data: newTokens,
     })
   } catch (error) {
-    return res.status(401).json({
-      status: 'UNAUTHORIZED',
-      message: error.message,
-    })
+    return sendErrorResponse(res, error)
   }
 }
