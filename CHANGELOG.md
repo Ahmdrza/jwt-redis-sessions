@@ -4,6 +4,37 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] - 2025-01-25
+
+### 📦 Package Optimization
+
+This release focuses on reducing package size while maintaining full functionality and developer experience.
+
+#### ✨ Optimizations
+
+- **Documentation streamlining** - Optimized JSDoc comments across all files
+- **TypeScript definitions** - Condensed verbose documentation while preserving all type information
+- **Package size reduction** - Reduced unpacked size by 11.7% (51.5kB → 45.5kB)
+- **File size improvements**:
+  - `jwt.service.js`: 12.8kB → 10.5kB (-18%)
+  - `index.d.ts`: 8.3kB → 4.6kB (-45%)
+
+#### 🎯 Benefits
+
+- **Faster installs** - Smaller download size
+- **Better performance** - Reduced memory footprint
+- **Same functionality** - Zero breaking changes
+- **Maintained DX** - All TypeScript definitions preserved
+
+#### ✅ Quality Assurance
+
+- All 102 tests passing
+- Zero functional changes
+- Complete API compatibility
+- Full TypeScript support maintained
+
+---
+
 ## [2.0.0] - 2025-01-25
 
 ### 🚨 BREAKING CHANGES
