@@ -21,15 +21,10 @@ const generateSessionId = () => {
 }
 
 /**
- * Generates JWT access and refresh tokens for a user session
- * @param {Object} data - User data to encode in the token (e.g., userId, email, role)
- * @param {Object} [req] - Optional Express request object for device fingerprinting
- * @returns {Promise<Object>} Token response containing accessToken, refreshToken, expiresIn, and tokenType
- * @throws {ValidationError} If JWT secret is invalid or data validation fails
- * @throws {RedisError} If Redis operation fails
- * @example
- * const tokens = await generateToken({ userId: 'user123', email: 'user@example.com' })
- * // Returns: { accessToken: 'jwt...', refreshToken: 'jwt...', expiresIn: '15m', tokenType: 'Bearer' }
+ * Generate JWT access and refresh tokens
+ * @param {Object} data User data for token (userId, email, role, etc.)
+ * @param {Object} [req] Optional request for fingerprinting
+ * @returns {Promise<Object>} Token response with accessToken, refreshToken, expiresIn, tokenType
  */
 exports.generateToken = async (data = {}, req = null) => {
   try {
@@ -115,15 +110,10 @@ exports.generateToken = async (data = {}, req = null) => {
 }
 
 /**
- * Verifies and validates a JWT token
- * @param {string} token - The JWT token to verify
- * @param {Object} [req] - Optional Express request object for fingerprint verification
- * @returns {Promise<Object>} Verification result with valid flag, decoded data, and session info
- * @throws {TokenError} If token is invalid, expired, blacklisted, or fingerprint doesn't match
- * @throws {RedisError} If Redis operation fails
- * @example
- * const result = await verifyToken('jwt...')
- * // Returns: { valid: true, decoded: { userId: 'user123', ... }, session: { sessionId: '...', ... } }
+ * Verify and validate a JWT token
+ * @param {string} token JWT token to verify
+ * @param {Object} [req] Optional request for fingerprint verification
+ * @returns {Promise<Object>} Verification result with valid, decoded, session
  */
 exports.verifyToken = async (token, req = null) => {
   try {
@@ -191,15 +181,10 @@ exports.verifyToken = async (token, req = null) => {
 }
 
 /**
- * Refreshes an access token using a valid refresh token
- * @param {string} refreshToken - The refresh token
- * @param {Object} [req] - Optional Express request object for fingerprint verification
- * @returns {Promise<Object>} New token pair with accessToken, refreshToken, expiresIn, and tokenType
- * @throws {TokenError} If refresh token is invalid, expired, or blacklisted
- * @throws {RedisError} If Redis operation fails
- * @example
- * const newTokens = await refreshToken('refresh_jwt...')
- * // Returns: { accessToken: 'new_jwt...', refreshToken: 'new_refresh...', expiresIn: '15m', tokenType: 'Bearer' }
+ * Refresh access token using refresh token
+ * @param {string} refreshToken The refresh token
+ * @param {Object} [req] Optional request for fingerprint verification
+ * @returns {Promise<Object>} New token pair
  */
 exports.refreshToken = async (refreshToken, req = null) => {
   try {
@@ -254,14 +239,9 @@ exports.refreshToken = async (refreshToken, req = null) => {
 }
 
 /**
- * Revokes a token by adding it to the blacklist
- * @param {string} token - The token to revoke
+ * Revoke token by blacklisting
+ * @param {string} token Token to revoke
  * @returns {Promise<Object>} Success status and message
- * @throws {TokenError} If token is invalid
- * @throws {RedisError} If Redis operation fails
- * @example
- * const result = await revokeToken('jwt...')
- * // Returns: { success: true, message: 'Token revoked successfully' }
  */
 exports.revokeToken = async (token) => {
   try {
@@ -295,14 +275,9 @@ exports.revokeToken = async (token) => {
 }
 
 /**
- * Checks if a token has been blacklisted/revoked
- * @param {string} token - The token to check
- * @returns {Promise<boolean>} True if token is blacklisted, false otherwise
- * @throws {TokenError} If token format is invalid
- * @throws {RedisError} If Redis operation fails
- * @example
- * const isBlacklisted = await isTokenBlacklisted('jwt...')
- * // Returns: true or false
+ * Check if token is blacklisted
+ * @param {string} token Token to check
+ * @returns {Promise<boolean>} True if blacklisted
  */
 exports.isTokenBlacklisted = async (token) => {
   try {
@@ -316,14 +291,9 @@ exports.isTokenBlacklisted = async (token) => {
 }
 
 /**
- * Retrieves all active sessions for a specific user
- * @param {string} userIdentifier - The user identifier (userId, id, or email)
- * @returns {Promise<Array>} Array of session objects with sessionId, createdAt, lastActivity, and user data
- * @throws {Error} If userIdentifier is not provided
- * @throws {RedisError} If Redis operation fails
- * @example
- * const sessions = await getUserSessions('user123')
- * // Returns: [{ sessionId: '...', createdAt: '2024-01-01T00:00:00Z', lastActivity: '...', userId: 'user123' }]
+ * Get all active sessions for user
+ * @param {string} userIdentifier User identifier (userId, id, or email)
+ * @returns {Promise<Array>} Array of session objects
  */
 exports.getUserSessions = async (userIdentifier) => {
   try {
@@ -362,14 +332,9 @@ exports.getUserSessions = async (userIdentifier) => {
 }
 
 /**
- * Revokes all active sessions/tokens for a specific user
- * @param {string} userIdentifier - The user identifier (can be userId, id, or email based on your token data)
- * @returns {Promise<Object>} Success status and message with count of revoked sessions
- * @throws {Error} If userIdentifier is not provided
- * @throws {RedisError} If Redis operation fails
- * @example
- * const result = await revokeAllUserTokens('user123')
- * // Returns: { success: true, message: 'Revoked 3 sessions for user user123' }
+ * Revoke all user sessions/tokens
+ * @param {string} userIdentifier User identifier (userId, id, or email)
+ * @returns {Promise<Object>} Success status and revoked count
  */
 exports.revokeAllUserTokens = async (userIdentifier) => {
   try {

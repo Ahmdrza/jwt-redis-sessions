@@ -96,91 +96,49 @@ declare module 'jwt-redis-sessions' {
   // Main functions
 
   /**
-   * Generates JWT access and refresh tokens for a user session
-   * @param data - User data to encode in the token. For logoutAll to work, include userId, id, or email
-   * @param req - Optional Express request object for device fingerprinting
-   * @returns Token response containing accessToken, refreshToken, expiresIn, and tokenType
-   * @throws {ValidationError} If JWT secret is invalid or data validation fails
-   * @throws {RedisError} If Redis operation fails
-   * @example
-   * const tokens = await generateToken({ userId: 'user123', email: 'user@example.com' })
-   * // Returns: { accessToken: 'jwt...', refreshToken: 'jwt...', expiresIn: '15m', tokenType: 'Bearer' }
+   * Generate JWT access and refresh tokens
+   * @param data User data for token (include userId, id, or email for revokeAllUserTokens)
+   * @param req Optional request for fingerprinting
    */
   function generateToken(data?: TokenData | null, req?: any): Promise<TokenResponse>
 
   /**
-   * Verifies and validates a JWT token
-   * @param token - The JWT token to verify
-   * @param req - Optional Express request object for fingerprint verification
-   * @returns Verification result with valid flag, decoded data, and session info
-   * @throws {TokenError} If token is invalid, expired, blacklisted, or fingerprint doesn't match
-   * @throws {RedisError} If Redis operation fails
-   * @example
-   * const result = await verifyToken('jwt...')
-   * // Returns: { valid: true, decoded: { userId: 'user123', ... }, session: { sessionId: '...', ... } }
+   * Verify and validate JWT token
+   * @param token JWT token to verify
+   * @param req Optional request for fingerprint verification
    */
   function verifyToken(token: string, req?: any): Promise<VerifyTokenResult>
 
   /**
-   * Refreshes an access token using a valid refresh token
-   * @param refreshToken - The refresh token
-   * @param req - Optional Express request object for fingerprint verification
-   * @returns New token pair with accessToken, refreshToken, expiresIn, and tokenType
-   * @throws {TokenError} If refresh token is invalid, expired, or blacklisted
-   * @throws {RedisError} If Redis operation fails
-   * @example
-   * const newTokens = await refreshToken('refresh_jwt...')
-   * // Returns: { accessToken: 'new_jwt...', refreshToken: 'new_refresh...', expiresIn: '15m', tokenType: 'Bearer' }
+   * Refresh access token using refresh token
+   * @param refreshToken The refresh token
+   * @param req Optional request for fingerprint verification
    */
   function refreshToken(refreshToken: string, req?: any): Promise<TokenResponse>
 
   /**
-   * Revokes a token by adding it to the blacklist
-   * @param token - The token to revoke
-   * @returns Success status and message
-   * @throws {TokenError} If token is invalid
-   * @throws {RedisError} If Redis operation fails
-   * @example
-   * const result = await revokeToken('jwt...')
-   * // Returns: { success: true, message: 'Token revoked successfully' }
+   * Revoke token by blacklisting
+   * @param token Token to revoke
    */
   function revokeToken(token: string): Promise<{ success: boolean; message: string }>
 
   /**
-   * Revokes all active sessions/tokens for a specific user
-   * @param userIdentifier - The user identifier (can be userId, id, or email based on your token data)
-   * @returns Success status and message with count of revoked sessions
-   * @throws {Error} If userIdentifier is not provided
-   * @throws {RedisError} If Redis operation fails
-   * @example
-   * const result = await revokeAllUserTokens('user123')
-   * // Returns: { success: true, message: 'Revoked 3 sessions for user user123' }
+   * Revoke all user sessions/tokens
+   * @param userIdentifier User identifier (userId, id, or email)
    */
   function revokeAllUserTokens(
     userIdentifier: string
   ): Promise<{ success: boolean; message: string }>
 
   /**
-   * Retrieves all active sessions for a specific user
-   * @param userIdentifier - The user identifier (userId, id, or email)
-   * @returns Array of session objects with sessionId, createdAt, lastActivity, and user data
-   * @throws {Error} If userIdentifier is not provided
-   * @throws {RedisError} If Redis operation fails
-   * @example
-   * const sessions = await getUserSessions('user123')
-   * // Returns: [{ sessionId: '...', createdAt: '2024-01-01T00:00:00Z', lastActivity: '...', userId: 'user123' }]
+   * Get all active sessions for user
+   * @param userIdentifier User identifier (userId, id, or email)
    */
   function getUserSessions(userIdentifier: string): Promise<SessionData[]>
 
   /**
-   * Checks if a token has been blacklisted/revoked
-   * @param token - The token to check
-   * @returns True if token is blacklisted, false otherwise
-   * @throws {TokenError} If token format is invalid
-   * @throws {RedisError} If Redis operation fails
-   * @example
-   * const isBlacklisted = await isTokenBlacklisted('jwt...')
-   * // Returns: true or false
+   * Check if token is blacklisted
+   * @param token Token to check
    */
   function isTokenBlacklisted(token: string): Promise<boolean>
 
@@ -188,26 +146,17 @@ declare module 'jwt-redis-sessions' {
 
   /**
    * Express middleware for JWT authentication
-   * Validates the authorization header and verifies the token
-   * @param req - Express request object
-   * @param res - Express response object
-   * @param next - Express next middleware function
-   * @returns Calls next() if authentication succeeds, sends error response otherwise
-   * @example
-   * app.get('/protected', auth, (req, res) => {
-   *   res.json({ message: 'Authenticated!' })
-   * })
+   * @param req Express request object
+   * @param res Express response object
+   * @param next Express next function
    */
   function auth(req: any, res: any, next: any): Promise<void>
 
   /**
-   * Creates rate limiting middleware to prevent brute force attacks
-   * @param maxAttempts - Maximum number of attempts allowed (default: 5)
-   * @param windowMs - Time window in milliseconds (default: 15 minutes)
-   * @param maxMapSize - Maximum size of attempts map to prevent memory exhaustion (default: 10000)
-   * @returns Express middleware function
-   * @example
-   * app.use('/api/login', rateLimit(5, 15 * 60 * 1000)) // 5 attempts per 15 minutes
+   * Rate limiting middleware to prevent brute force attacks
+   * @param maxAttempts Max attempts allowed (default: 5)
+   * @param windowMs Time window in ms (default: 15 min)
+   * @param maxMapSize Max map size (default: 10000)
    */
   function rateLimit(
     maxAttempts?: number,
@@ -217,29 +166,18 @@ declare module 'jwt-redis-sessions' {
 
   // Utility functions
 
-  /**
-   * Configuration object containing JWT, Redis, and security settings
-   */
+  /** Configuration object */
   const config: Config
 
   /**
    * Manually initialize Redis connection
-   * Note: Connection is auto-initialized on first use, so this is usually not needed
-   * @returns Promise that resolves when connection is established
-   * @example
-   * await initialize()
+   * Note: Auto-initialized on first use
    */
   function initialize(): Promise<void>
 
   /**
    * Close Redis connection gracefully
-   * Use this when shutting down your application
-   * @returns Promise that resolves when connection is closed
-   * @example
-   * process.on('SIGTERM', async () => {
-   *   await closeRedisConnection()
-   *   process.exit(0)
-   * })
+   * Use when shutting down application
    */
   function closeRedisConnection(): Promise<void>
 }

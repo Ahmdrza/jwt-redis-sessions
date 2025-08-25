@@ -1,6 +1,6 @@
 {
   "name": "jwt-redis-sessions",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "A secure, production-ready JWT authentication and session management library for Node.js with Redis backend",
   "main": "index.js",
   "types": "index.d.ts",
