@@ -25,7 +25,8 @@ describe('Integration Tests', () => {
 
       expect(verifyResult.valid).toBe(true)
       expect(verifyResult.decoded.userId).toBe('user123')
-      expect(verifyResult.decoded.type).toBe('access')
+      // Internal fields should be filtered out
+      expect(verifyResult.decoded.type).toBeUndefined()
       expect(verifyResult.session.userId).toBe('user123')
 
       // Step 3: Refresh tokens
@@ -99,17 +100,13 @@ describe('Integration Tests', () => {
       await jwtRedisSession.auth(mockReq, mockRes, mockNext)
 
       expect(mockNext).toHaveBeenCalledTimes(1)
-      expect(mockReq.user).toBeDefined()
-      expect(mockReq.user.userId).toBe('user123')
+      expect(mockRes.status).not.toHaveBeenCalled()
 
-      // Step 2: Logout using handler
-      await jwtRedisSession.logout(mockReq, mockRes)
+      // Step 2: Logout using direct function
+      const logoutResult = await jwtRedisSession.revokeToken(tokens.accessToken)
 
-      expect(mockRes.status).toHaveBeenCalledWith(200)
-      expect(mockRes.json).toHaveBeenCalledWith({
-        status: 'SUCCESS',
-        message: 'Token revoked successfully',
-      })
+      expect(logoutResult.success).toBe(true)
+      expect(logoutResult.message).toBe('Token revoked successfully')
 
       // Verify token is blacklisted
       const isBlacklisted = await jwtRedisSession.isTokenBlacklisted(tokens.accessToken)
@@ -118,44 +115,27 @@ describe('Integration Tests', () => {
   })
 
   describe('Refresh token flow', () => {
-    let mockReq, mockRes
-
     beforeEach(async () => {
       tokens = await jwtRedisSession.generateToken(userData)
-
-      mockReq = {
-        headers: { authorization: `Bearer ${tokens.refreshToken}` },
-      }
-
-      mockRes = {
-        status: jest.fn().mockReturnThis(),
-        json: jest.fn().mockReturnThis(),
-      }
     })
 
     it('should handle complete refresh flow', async () => {
-      // Use refresh handler
-      await jwtRedisSession.refresh(mockReq, mockRes)
+      // Use refresh function directly
+      const newTokens = await jwtRedisSession.refreshToken(tokens.refreshToken)
 
-      expect(mockRes.status).toHaveBeenCalledWith(200)
-      expect(mockRes.json).toHaveBeenCalledWith({
-        status: 'SUCCESS',
-        message: 'Token refreshed successfully',
-        data: expect.objectContaining({
+      expect(newTokens).toEqual(
+        expect.objectContaining({
           accessToken: expect.any(String),
           refreshToken: expect.any(String),
           expiresIn: '15m',
           tokenType: 'Bearer',
-        }),
-      })
+        })
+      )
 
       // Original refresh token should now be invalid
-      mockRes.status.mockClear()
-      mockRes.json.mockClear()
-
-      await jwtRedisSession.refresh(mockReq, mockRes)
-
-      expect(mockRes.status).toHaveBeenCalledWith(401)
+      await expect(jwtRedisSession.refreshToken(tokens.refreshToken)).rejects.toThrow(
+        'Invalid refresh token'
+      )
     })
   })
 
@@ -190,7 +170,8 @@ describe('Integration Tests', () => {
 
   describe('Error propagation', () => {
     it('should propagate validation errors correctly', async () => {
-      await expect(jwtRedisSession.generateToken({})).rejects.toThrow(
+      // Null is now valid, test with string instead
+      await expect(jwtRedisSession.generateToken('invalid')).rejects.toThrow(
         jwtRedisSession.ValidationError
       )
       await expect(jwtRedisSession.verifyToken('invalid-token')).rejects.toThrow(
@@ -235,39 +216,6 @@ describe('Integration Tests', () => {
       // Just verify the token structure, not the verification process
       // since Redis mocking might interfere
       expect(testTokens.accessToken).toMatch(/^[\w-]+\.[\w-]+\.[\w-]+$/) // JWT format
-    })
-  })
-
-  describe('Optional authentication', () => {
-    let mockReq, mockRes, mockNext
-
-    beforeEach(() => {
-      mockReq = { headers: {} }
-      mockRes = {
-        status: jest.fn().mockReturnThis(),
-        json: jest.fn().mockReturnThis(),
-      }
-      mockNext = jest.fn()
-    })
-
-    it('should handle requests without authentication gracefully', async () => {
-      await jwtRedisSession.optionalAuth(mockReq, mockRes, mockNext)
-
-      expect(mockNext).toHaveBeenCalled()
-      expect(mockReq.user).toBeUndefined()
-      expect(mockRes.status).not.toHaveBeenCalled()
-    })
-
-    it('should authenticate when valid token is provided', async () => {
-      const tokens = await jwtRedisSession.generateToken(userData)
-      mockReq.headers.authorization = `Bearer ${tokens.accessToken}`
-
-      await jwtRedisSession.optionalAuth(mockReq, mockRes, mockNext)
-
-      expect(mockNext).toHaveBeenCalled()
-      expect(mockReq.user).toBeDefined()
-      expect(mockReq.user.userId).toBe('user123')
-      expect(mockRes.status).not.toHaveBeenCalled()
     })
   })
 })

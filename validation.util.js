@@ -31,18 +31,14 @@ exports.validateAuthHeader = (authHeader) => {
 }
 
 exports.validateTokenData = (data) => {
-  if (!data || typeof data !== 'object') {
+  // Allow null/undefined - will be converted to empty object
+  if (data == null) {
+    return true
+  }
+
+  // If provided, must be a plain object
+  if (typeof data !== 'object' || data.constructor !== Object) {
     throw new ValidationError('Token data must be an object')
-  }
-
-  // Prevent prototype pollution
-  if (data.constructor !== Object) {
-    throw new ValidationError('Invalid token data structure')
-  }
-
-  // Check for required fields
-  if (!data.userId && !data.id && !data.email) {
-    throw new ValidationError('Token data must contain userId, id, or email')
   }
 
   return true

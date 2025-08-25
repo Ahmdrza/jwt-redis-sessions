@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken')
+const crypto = require('crypto')
 const config = require('./config')
 const { TokenError } = require('./errors')
 
@@ -132,5 +133,130 @@ exports.handleJwtError = (error, tokenType = null) => {
       return new TokenError(`${tokenTypePrefix} not yet valid`)
     default:
       return new TokenError(error.message || 'Token verification failed')
+  }
+}
+
+// ==================== TOKEN DATA UTILITIES ====================
+
+// Filter out internal JWT fields from decoded token
+exports.getCleanUserData = (decodedToken) => {
+  const internalFields = [
+    // JWT standard claims
+    'iat',
+    'exp',
+    'nbf',
+    'iss',
+    'aud',
+    'sub',
+    'jti',
+    // Our internal fields
+    'sessionId',
+    'type',
+    '_fp',
+    '_fpTime',
+  ]
+
+  const cleanData = {}
+  for (const [key, value] of Object.entries(decodedToken)) {
+    if (!internalFields.includes(key)) {
+      cleanData[key] = value
+    }
+  }
+
+  return cleanData
+}
+
+// ==================== TOKEN FINGERPRINTING ====================
+
+// Generate device/browser fingerprint
+exports.generateFingerprint = (req) => {
+  if (!req) {
+    return null
+  }
+
+  const components = []
+
+  // User agent (browser/device info)
+  if (req.headers && req.headers['user-agent']) {
+    components.push(req.headers['user-agent'])
+  }
+
+  // Accept language (user preference)
+  if (req.headers && req.headers['accept-language']) {
+    components.push(req.headers['accept-language'])
+  }
+
+  // Accept encoding (browser capabilities)
+  if (req.headers && req.headers['accept-encoding']) {
+    components.push(req.headers['accept-encoding'])
+  }
+
+  // IP address (with some flexibility for proxy/load balancer scenarios)
+  const ip =
+    req.ip || req.connection?.remoteAddress || req.headers?.['x-forwarded-for']?.split(',')[0]
+  if (ip) {
+    // Use first 3 octets for IPv4 to handle dynamic IPs
+    const ipParts = ip.split('.')
+    if (ipParts.length === 4) {
+      components.push(`${ipParts[0]}.${ipParts[1]}.${ipParts[2]}.x`)
+    } else {
+      components.push(ip) // IPv6 or other formats
+    }
+  }
+
+  // Create stable hash
+  const fingerprintData = components.join('|')
+  return crypto.createHash('sha256').update(fingerprintData).digest('hex').substring(0, 16) // Use first 16 chars for compactness
+}
+
+// Verify token fingerprint
+exports.verifyFingerprint = (req, tokenFingerprint) => {
+  if (!tokenFingerprint) {
+    return { valid: true, reason: null }
+  }
+
+  const currentFingerprint = exports.generateFingerprint(req)
+
+  if (currentFingerprint === tokenFingerprint) {
+    return { valid: true, reason: null }
+  }
+
+  // In strict mode, reject immediately
+  if (config.security.fingerprintStrict) {
+    return {
+      valid: false,
+      reason: 'Token fingerprint mismatch - device/network change detected',
+    }
+  }
+
+  // In non-strict mode, log warning but allow (for user convenience)
+  console.warn('Token fingerprint mismatch detected:', {
+    expected: tokenFingerprint,
+    actual: currentFingerprint,
+    ip: req.ip,
+    userAgent: req.headers['user-agent']?.substring(0, 100),
+  })
+
+  return {
+    valid: true,
+    reason: 'Fingerprint mismatch but allowed in non-strict mode',
+  }
+}
+
+// Add fingerprint to token data
+exports.addFingerprintToTokenData = (tokenData, req) => {
+  if (!config.security.enableFingerprinting || !req) {
+    return tokenData
+  }
+
+  const fingerprint = exports.generateFingerprint(req)
+  if (!fingerprint) {
+    return tokenData
+  }
+
+  return {
+    ...tokenData,
+    _fp: fingerprint, // Use short name to keep token size small
+    _fpTime: exports.getUnixTimestamp(),
   }
 }

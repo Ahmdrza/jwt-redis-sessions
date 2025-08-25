@@ -67,7 +67,14 @@ JWT_REFRESH_TOKEN_EXPIRY=7d
 
 ```javascript
 const express = require('express')
-const { generateToken, auth, logout } = require('jwt-redis-sessions')
+const {
+  generateToken,
+  verifyToken,
+  refreshToken,
+  revokeToken,
+  revokeAllUserTokens,
+  auth,
+} = require('jwt-redis-sessions')
 
 const app = express()
 app.use(express.json())
@@ -77,9 +84,15 @@ app.post('/login', async (req, res) => {
   try {
     // Validate user credentials here
     const user = {
-      userId: 'user123',
+      userId: 'user123', // Required for revokeAllUserTokens
       email: 'user@example.com',
+      role: 'admin', // Optional additional data
     }
+
+    // IMPORTANT: For revokeAllUserTokens to work, include at least one of these fields:
+    // - userId
+    // - id
+    // - email
 
     // Generate tokens
     const tokens = await generateToken(user)
@@ -90,16 +103,71 @@ app.post('/login', async (req, res) => {
 })
 
 // Protected route
-app.get('/profile', auth, (req, res) => {
+app.get('/profile', auth, async (req, res) => {
+  // The auth middleware validates the token but doesn't attach data to req
+  // You can verify the token again if you need user data
+  const token = req.headers.authorization?.split(' ')[1]
+  const result = await verifyToken(token)
+
   res.json({
     message: 'This is a protected route',
-    user: req.user,
-    session: req.session,
+    user: result.decoded,
+    session: result.session,
   })
 })
 
-// Logout
-app.post('/logout', auth, logout)
+// Refresh token endpoint
+app.post('/refresh', async (req, res) => {
+  try {
+    const refreshTokenValue = req.headers.authorization?.split(' ')[1]
+    if (!refreshTokenValue) {
+      return res.status(400).json({ error: 'Refresh token required' })
+    }
+
+    const newTokens = await refreshToken(refreshTokenValue)
+    res.json(newTokens)
+  } catch (error) {
+    res.status(401).json({ error: error.message })
+  }
+})
+
+// Logout current session
+app.post('/logout', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1]
+    if (!token) {
+      return res.status(400).json({ error: 'Token required' })
+    }
+
+    await revokeToken(token)
+    res.json({ success: true, message: 'Logged out successfully' })
+  } catch (error) {
+    res.status(401).json({ error: error.message })
+  }
+})
+
+// Logout all sessions for the user
+app.post('/logout-all', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1]
+    if (!token) {
+      return res.status(400).json({ error: 'Token required' })
+    }
+
+    // Verify token to get user identifier
+    const result = await verifyToken(token)
+    const userIdentifier = result.decoded.userId || result.decoded.id || result.decoded.email
+
+    if (!userIdentifier) {
+      return res.status(400).json({ error: 'User identifier not found in token' })
+    }
+
+    const logoutResult = await revokeAllUserTokens(userIdentifier)
+    res.json({ success: true, message: logoutResult.message })
+  } catch (error) {
+    res.status(401).json({ error: error.message })
+  }
+})
 
 app.listen(3000, () => {
   console.log('Server running on http://localhost:3000')
@@ -130,19 +198,12 @@ All configuration is done through environment variables. See [.env.example](.env
 - `generateToken(data)` - Generate access and refresh tokens
 - `refreshToken(token)` - Refresh an access token
 - `revokeToken(token)` - Revoke a specific token
-- `revokeAllUserTokens(userId)` - Revoke all tokens for a user
+- `revokeAllUserTokens(userIdentifier)` - Revoke all tokens for a user
 
 ### Middleware
 
 - `auth` - Main authentication middleware
-- `optionalAuth` - Optional authentication
-- `rateLimit(maxAttempts, windowMs)` - Rate limiting middleware
-
-### Handlers
-
-- `logout` - Logout current session
-- `logoutAll` - Logout all sessions
-- `refresh` - Refresh token handler
+- `rateLimit(maxAttempts, windowMs, maxMapSize)` - Rate limiting middleware
 
 ## Documentation
 

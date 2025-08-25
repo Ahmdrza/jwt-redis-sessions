@@ -132,8 +132,11 @@ const tokens = await generateToken({
 })
 
 // Verify IP binding in middleware
-app.use(auth, (req, res, next) => {
-  if (req.user.boundIP && req.user.boundIP !== req.clientIP) {
+app.use(auth, async (req, res, next) => {
+  const token = req.headers.authorization?.split(' ')[1]
+  const result = await verifyToken(token)
+
+  if (result.decoded.boundIP && result.decoded.boundIP !== req.clientIP) {
     return res.status(401).json({ error: 'Token IP binding mismatch' })
   }
   next()

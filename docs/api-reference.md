@@ -6,10 +6,21 @@
 
 Generate access and refresh tokens.
 
+**Important for revokeAllUserTokens functionality:**
+Your token data must include at least one of these fields:
+
+- `userId`
+- `id`
+- `email`
+
+This is required for the `revokeAllUserTokens` function to identify and revoke all sessions for a user.
+
 ```javascript
 const tokens = await generateToken({
-  userId: 'user123',
-  email: 'user@example.com'
+  userId: 'user123',     // Used by revokeAllUserTokens
+  email: 'user@example.com',
+  role: 'admin',         // Additional custom data
+  permissions: ['read', 'write']
 })
 
 // Returns:
@@ -37,7 +48,7 @@ Revoke a specific token.
 await revokeToken(accessToken)
 ```
 
-### `revokeAllUserTokens(userId: string): Promise<{ success: boolean, message: string }>`
+### `revokeAllUserTokens(userIdentifier: string): Promise<{ success: boolean, message: string }>`
 
 Revoke all tokens for a specific user.
 
@@ -49,27 +60,16 @@ await revokeAllUserTokens('user123')
 
 ### `auth`
 
-Main authentication middleware that validates tokens and attaches user info to the request.
+Main authentication middleware that validates tokens. It verifies the token but doesn't attach data to the request object.
 
 ```javascript
-app.get('/protected', auth, (req, res) => {
-  console.log(req.user) // Decoded JWT payload
-  console.log(req.session) // Session data from Redis
-  console.log(req.token) // The actual token
-})
-```
-
-### `optionalAuth`
-
-Optional authentication that doesn't fail if no token is provided.
-
-```javascript
-app.get('/public', optionalAuth, (req, res) => {
-  if (req.user) {
-    // User is authenticated
-  } else {
-    // User is not authenticated
-  }
+app.get('/protected', auth, async (req, res) => {
+  // Token is valid if we reach here
+  // If you need user data, verify the token again:
+  const token = req.headers.authorization?.split(' ')[1]
+  const result = await verifyToken(token)
+  console.log(result.decoded) // User data
+  console.log(result.session) // Session data
 })
 ```
 
@@ -83,32 +83,6 @@ app.post('/login', rateLimit(), loginHandler)
 
 // Custom: 10 attempts per 5 minutes
 app.post('/api', rateLimit(10, 5 * 60 * 1000), handler)
-```
-
-## Handlers
-
-### `logout`
-
-Logout handler that revokes the current token.
-
-```javascript
-app.post('/logout', auth, logout)
-```
-
-### `logoutAll`
-
-Logout handler that revokes all tokens for the authenticated user.
-
-```javascript
-app.post('/logout-all', auth, logoutAll)
-```
-
-### `refresh`
-
-Refresh token handler.
-
-```javascript
-app.post('/refresh', refresh)
 ```
 
 ## Advanced Usage
@@ -180,7 +154,7 @@ process.on('SIGTERM', async () => {
 The library includes comprehensive TypeScript definitions:
 
 ```typescript
-import { generateToken, auth, AuthRequest, TokenData, TokenResponse } from 'jwt-redis-sessions'
+import { generateToken, auth, TokenData, TokenResponse } from 'jwt-redis-sessions'
 
 app.post('/login', async (req, res) => {
   const userData: TokenData = {
@@ -192,8 +166,10 @@ app.post('/login', async (req, res) => {
   res.json(tokens)
 })
 
-app.get('/profile', auth, (req: AuthRequest, res) => {
-  res.json({ user: req.user })
+app.get('/profile', auth, async (req: any, res) => {
+  const token = req.headers.authorization?.split(' ')[1]
+  const result = await verifyToken(token!)
+  res.json({ user: result.decoded })
 })
 ```
 

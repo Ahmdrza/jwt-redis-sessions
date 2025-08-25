@@ -8,6 +8,9 @@ const {
   getUnixTimestamp,
   getISOTimestamp,
   redisKeys,
+  addFingerprintToTokenData,
+  verifyFingerprint,
+  getCleanUserData,
 } = require('./utils')
 const { AuthError, TokenError } = require('./errors')
 const redisHelper = require('./redis.config')
@@ -17,19 +20,35 @@ const generateSessionId = () => {
   return crypto.randomBytes(config.security.tokenLength).toString('hex')
 }
 
-// Generate access token with proper payload
-exports.generateToken = async (data = {}) => {
+/**
+ * Generates JWT access and refresh tokens for a user session
+ * @param {Object} data - User data to encode in the token (e.g., userId, email, role)
+ * @param {Object} [req] - Optional Express request object for device fingerprinting
+ * @returns {Promise<Object>} Token response containing accessToken, refreshToken, expiresIn, and tokenType
+ * @throws {ValidationError} If JWT secret is invalid or data validation fails
+ * @throws {RedisError} If Redis operation fails
+ * @example
+ * const tokens = await generateToken({ userId: 'user123', email: 'user@example.com' })
+ * // Returns: { accessToken: 'jwt...', refreshToken: 'jwt...', expiresIn: '15m', tokenType: 'Bearer' }
+ */
+exports.generateToken = async (data = {}, req = null) => {
   try {
     // Validate input
     validateSecret(config.jwt.secret)
     validateTokenData(data)
 
+    // Convert null to empty object for convenience
+    const userData = data || {}
+
     const sessionId = generateSessionId()
     const now = getUnixTimestamp()
 
+    // Add fingerprinting to token data if available
+    const tokenData = addFingerprintToTokenData(userData, req)
+
     // Create JWT payload with claims
     const payload = {
-      ...data,
+      ...tokenData,
       sessionId,
       iat: now,
       iss: config.jwt.issuer,
@@ -46,7 +65,9 @@ exports.generateToken = async (data = {}) => {
     // Generate refresh token
     const refreshPayload = {
       sessionId,
-      userId: data.userId || data.id,
+      // Include user identifier if available (for user session management)
+      ...(userData.userId && { userId: userData.userId }),
+      ...(userData.id && { id: userData.id }),
       iat: now,
       iss: config.jwt.issuer,
       aud: config.jwt.audience,
@@ -60,7 +81,7 @@ exports.generateToken = async (data = {}) => {
 
     // Store session data in Redis
     const sessionData = {
-      ...data,
+      ...userData,
       sessionId,
       createdAt: getISOTimestamp(),
       lastActivity: getISOTimestamp(),
@@ -93,8 +114,18 @@ exports.generateToken = async (data = {}) => {
   }
 }
 
-// Verify and decode token
-exports.verifyToken = async (token) => {
+/**
+ * Verifies and validates a JWT token
+ * @param {string} token - The JWT token to verify
+ * @param {Object} [req] - Optional Express request object for fingerprint verification
+ * @returns {Promise<Object>} Verification result with valid flag, decoded data, and session info
+ * @throws {TokenError} If token is invalid, expired, blacklisted, or fingerprint doesn't match
+ * @throws {RedisError} If Redis operation fails
+ * @example
+ * const result = await verifyToken('jwt...')
+ * // Returns: { valid: true, decoded: { userId: 'user123', ... }, session: { sessionId: '...', ... } }
+ */
+exports.verifyToken = async (token, req = null) => {
   try {
     validateSecret(config.jwt.secret)
 
@@ -106,6 +137,14 @@ exports.verifyToken = async (token) => {
 
     // Verify JWT with security checks and type validation
     const decoded = verifyJwtToken(token, 'access')
+
+    // Verify fingerprint if enabled and request context available
+    if (req && decoded._fp) {
+      const fingerprintResult = verifyFingerprint(req, decoded._fp)
+      if (!fingerprintResult.valid) {
+        throw new TokenError(fingerprintResult.reason)
+      }
+    }
 
     // Check if session exists in Redis
     const sessionData = await redisHelper.get(redisKeys.sessionKey(decoded.sessionId))
@@ -126,7 +165,7 @@ exports.verifyToken = async (token) => {
 
     return {
       valid: true,
-      decoded,
+      decoded: getCleanUserData(decoded), // Filter out internal fields
       session,
     }
   } catch (error) {
@@ -151,8 +190,18 @@ exports.verifyToken = async (token) => {
   }
 }
 
-// Refresh token rotation
-exports.refreshToken = async (refreshToken) => {
+/**
+ * Refreshes an access token using a valid refresh token
+ * @param {string} refreshToken - The refresh token
+ * @param {Object} [req] - Optional Express request object for fingerprint verification
+ * @returns {Promise<Object>} New token pair with accessToken, refreshToken, expiresIn, and tokenType
+ * @throws {TokenError} If refresh token is invalid, expired, or blacklisted
+ * @throws {RedisError} If Redis operation fails
+ * @example
+ * const newTokens = await refreshToken('refresh_jwt...')
+ * // Returns: { accessToken: 'new_jwt...', refreshToken: 'new_refresh...', expiresIn: '15m', tokenType: 'Bearer' }
+ */
+exports.refreshToken = async (refreshToken, req = null) => {
   try {
     validateSecret(config.jwt.secret)
 
@@ -178,8 +227,8 @@ exports.refreshToken = async (refreshToken) => {
     // Delete old refresh token (rotation)
     await redisHelper.del(redisKeys.refreshKey(decoded.sessionId))
 
-    // Generate new tokens
-    const newTokens = await exports.generateToken(session)
+    // Generate new tokens (with fingerprinting if available)
+    const newTokens = await exports.generateToken(session, req)
 
     return newTokens
   } catch (error) {
@@ -204,7 +253,16 @@ exports.refreshToken = async (refreshToken) => {
   }
 }
 
-// Logout / Revoke token
+/**
+ * Revokes a token by adding it to the blacklist
+ * @param {string} token - The token to revoke
+ * @returns {Promise<Object>} Success status and message
+ * @throws {TokenError} If token is invalid
+ * @throws {RedisError} If Redis operation fails
+ * @example
+ * const result = await revokeToken('jwt...')
+ * // Returns: { success: true, message: 'Token revoked successfully' }
+ */
 exports.revokeToken = async (token) => {
   try {
     validateSecret(config.jwt.secret)
@@ -236,7 +294,16 @@ exports.revokeToken = async (token) => {
   }
 }
 
-// Check if token is blacklisted
+/**
+ * Checks if a token has been blacklisted/revoked
+ * @param {string} token - The token to check
+ * @returns {Promise<boolean>} True if token is blacklisted, false otherwise
+ * @throws {TokenError} If token format is invalid
+ * @throws {RedisError} If Redis operation fails
+ * @example
+ * const isBlacklisted = await isTokenBlacklisted('jwt...')
+ * // Returns: true or false
+ */
 exports.isTokenBlacklisted = async (token) => {
   try {
     const exists = await redisHelper.exists(redisKeys.blacklistKey(token))
@@ -248,8 +315,17 @@ exports.isTokenBlacklisted = async (token) => {
   }
 }
 
-// Get all active sessions for a user
-exports.getUserSessions = async (userId) => {
+/**
+ * Retrieves all active sessions for a specific user
+ * @param {string} userIdentifier - The user identifier (userId, id, or email)
+ * @returns {Promise<Array>} Array of session objects with sessionId, createdAt, lastActivity, and user data
+ * @throws {Error} If userIdentifier is not provided
+ * @throws {RedisError} If Redis operation fails
+ * @example
+ * const sessions = await getUserSessions('user123')
+ * // Returns: [{ sessionId: '...', createdAt: '2024-01-01T00:00:00Z', lastActivity: '...', userId: 'user123' }]
+ */
+exports.getUserSessions = async (userIdentifier) => {
   try {
     const client = redisHelper.getRedisClient()
     const sessions = []
@@ -268,7 +344,11 @@ exports.getUserSessions = async (userId) => {
         const sessionData = await client.get(key)
         if (sessionData) {
           const session = JSON.parse(sessionData)
-          if (session.userId === userId || session.id === userId) {
+          if (
+            session.userId === userIdentifier ||
+            session.id === userIdentifier ||
+            session.email === userIdentifier
+          ) {
             sessions.push(session)
           }
         }
@@ -281,10 +361,19 @@ exports.getUserSessions = async (userId) => {
   }
 }
 
-// Revoke all tokens for a user
-exports.revokeAllUserTokens = async (userId) => {
+/**
+ * Revokes all active sessions/tokens for a specific user
+ * @param {string} userIdentifier - The user identifier (can be userId, id, or email based on your token data)
+ * @returns {Promise<Object>} Success status and message with count of revoked sessions
+ * @throws {Error} If userIdentifier is not provided
+ * @throws {RedisError} If Redis operation fails
+ * @example
+ * const result = await revokeAllUserTokens('user123')
+ * // Returns: { success: true, message: 'Revoked 3 sessions for user user123' }
+ */
+exports.revokeAllUserTokens = async (userIdentifier) => {
   try {
-    const sessions = await exports.getUserSessions(userId)
+    const sessions = await exports.getUserSessions(userIdentifier)
 
     for (const session of sessions) {
       await Promise.all([
@@ -295,7 +384,7 @@ exports.revokeAllUserTokens = async (userId) => {
 
     return {
       success: true,
-      message: `Revoked ${sessions.length} sessions for user ${userId}`,
+      message: `Revoked ${sessions.length} sessions for user ${userIdentifier}`,
     }
   } catch (error) {
     throw new AuthError(`Failed to revoke user tokens: ${error.message}`)

@@ -16,9 +16,6 @@ describe('Auth Middleware', () => {
     // Mock Express req, res, next
     mockReq = {
       headers: {},
-      user: null,
-      session: null,
-      token: null,
     }
 
     mockRes = {
@@ -30,17 +27,12 @@ describe('Auth Middleware', () => {
   })
 
   describe('auth middleware', () => {
-    it('should authenticate valid token and attach user data', async () => {
+    it('should authenticate valid token', async () => {
       mockReq.headers.authorization = `Bearer ${validToken}`
 
       await authMiddleware.auth(mockReq, mockRes, mockNext)
 
       expect(mockNext).toHaveBeenCalled()
-      expect(mockReq.user).toBeDefined()
-      expect(mockReq.user.userId).toBe('user123')
-      expect(mockReq.user.type).toBe('access')
-      expect(mockReq.session).toBeDefined()
-      expect(mockReq.token).toBe(validToken)
       expect(mockRes.status).not.toHaveBeenCalled()
       expect(mockRes.json).not.toHaveBeenCalled()
     })
@@ -122,50 +114,6 @@ describe('Auth Middleware', () => {
       )
 
       process.env.NODE_ENV = originalEnv
-    })
-  })
-
-  describe('optionalAuth middleware', () => {
-    it('should authenticate valid token when provided', async () => {
-      mockReq.headers.authorization = `Bearer ${validToken}`
-
-      await authMiddleware.optionalAuth(mockReq, mockRes, mockNext)
-
-      expect(mockNext).toHaveBeenCalled()
-      expect(mockReq.user).toBeDefined()
-      expect(mockReq.user.userId).toBe('user123')
-      expect(mockRes.status).not.toHaveBeenCalled()
-    })
-
-    it('should continue without authentication when no token provided', async () => {
-      await authMiddleware.optionalAuth(mockReq, mockRes, mockNext)
-
-      expect(mockNext).toHaveBeenCalled()
-      expect(mockReq.user).toBeFalsy()
-      expect(mockRes.status).not.toHaveBeenCalled()
-    })
-
-    it('should continue without authentication when invalid token provided', async () => {
-      mockReq.headers.authorization = 'Bearer invalid-token'
-
-      await authMiddleware.optionalAuth(mockReq, mockRes, mockNext)
-
-      expect(mockNext).toHaveBeenCalled()
-      expect(mockReq.user).toBeFalsy()
-      expect(mockRes.status).not.toHaveBeenCalled()
-    })
-
-    it('should continue without authentication when blacklisted token provided', async () => {
-      // Blacklist the token first
-      await jwtService.revokeToken(validToken)
-
-      mockReq.headers.authorization = `Bearer ${validToken}`
-
-      await authMiddleware.optionalAuth(mockReq, mockRes, mockNext)
-
-      expect(mockNext).toHaveBeenCalled()
-      expect(mockReq.user).toBeFalsy()
-      expect(mockRes.status).not.toHaveBeenCalled()
     })
   })
 

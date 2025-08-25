@@ -1,3 +1,4 @@
+/* eslint-disable no-console */
 const redis = require('redis')
 const config = require('./config')
 const { RedisError } = require('./errors')
@@ -57,9 +58,6 @@ exports.bootstrapRedis = async () => {
       await redisClient.connect()
     }
 
-    // Test the connection
-    await redisClient.ping()
-
     return redisClient
   } catch (error) {
     throw new RedisError(`Failed to connect to Redis: ${error.message}`)
@@ -84,13 +82,11 @@ exports.closeRedisConnection = async () => {
 exports.isRedisConnected = () => isConnected
 
 // Helper functions for common Redis operations
+// Note: These functions expect keys that are already prefixed (from redisKeys utility)
 exports.setWithExpiry = async (key, value, ttl) => {
   try {
     const client = exports.getRedisClient()
-    const prefixedKey = `${config.redis.keyPrefix}${key}`
-    await client.set(prefixedKey, value, {
-      EX: ttl,
-    })
+    return await client.set(key, value, { EX: ttl })
   } catch (error) {
     throw new RedisError(`Failed to set key in Redis: ${error.message}`)
   }
@@ -99,8 +95,7 @@ exports.setWithExpiry = async (key, value, ttl) => {
 exports.get = async (key) => {
   try {
     const client = exports.getRedisClient()
-    const prefixedKey = `${config.redis.keyPrefix}${key}`
-    return await client.get(prefixedKey)
+    return await client.get(key)
   } catch (error) {
     throw new RedisError(`Failed to get key from Redis: ${error.message}`)
   }
@@ -109,8 +104,7 @@ exports.get = async (key) => {
 exports.del = async (key) => {
   try {
     const client = exports.getRedisClient()
-    const prefixedKey = `${config.redis.keyPrefix}${key}`
-    return await client.del(prefixedKey)
+    return await client.del(key)
   } catch (error) {
     throw new RedisError(`Failed to delete key from Redis: ${error.message}`)
   }
@@ -119,8 +113,7 @@ exports.del = async (key) => {
 exports.exists = async (key) => {
   try {
     const client = exports.getRedisClient()
-    const prefixedKey = `${config.redis.keyPrefix}${key}`
-    return await client.exists(prefixedKey)
+    return await client.exists(key)
   } catch (error) {
     throw new RedisError(`Failed to check key existence in Redis: ${error.message}`)
   }

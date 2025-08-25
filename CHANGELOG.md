@@ -2,8 +2,144 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [2.0.0] - 2025-01-25
+
+### 🚨 BREAKING CHANGES
+
+This is a major release with significant architectural improvements that require migration.
+
+#### Removed Features
+
+- **Removed `optionalAuth` middleware** - Use regular `auth` middleware and handle optional logic in your application
+- **Removed handler functions** - Use core functions directly:
+  - `logout()` → Use `revokeToken()`
+  - `logoutAll()` → Use `revokeAllUserTokens()`
+  - `refresh()` → Use `refreshToken()`
+- **Removed `utils` export** - Internal utilities are no longer exposed
+- **Removed request object modifications** - No more `req.jrs` or similar data attached to requests
+
+#### Parameter Changes
+
+- **`revokeAllUserTokens(userId)` → `revokeAllUserTokens(userIdentifier)`**
+- **`getUserSessions(userId)` → `getUserSessions(userIdentifier)`**
+
+### ✨ What's New
+
+#### Improved API Design
+
+- **Cleaner API surface** - Removed redundant wrapper functions
+- **Better parameter naming** - `userIdentifier` clearly indicates it accepts userId, id, or email
+- **No request pollution** - Library no longer modifies Express request objects
+
+#### Enhanced TypeScript Support
+
+- **Fixed missing parameters** - Added `maxMapSize` parameter to `rateLimit` function signature
+- **Comprehensive JSDoc** - Detailed documentation in TypeScript definitions
+- **Better type safety** - More precise parameter and return types
+
+### 🔧 Migration Guide
+
+#### 1. Replace Handler Functions
+
+```javascript
+// Before v2.0.0
+const { logout, logoutAll, refresh } = require('jwt-redis-sessions')
+await logout(req, res)
+await logoutAll(req, res)
+const newTokens = await refresh(req, res)
+
+// v2.0.0+
+const {
+  revokeToken,
+  revokeAllUserTokens,
+  refreshToken,
+  verifyToken,
+} = require('jwt-redis-sessions')
+const token = req.headers.authorization?.split(' ')[1]
+await revokeToken(token)
+const result = await verifyToken(token)
+await revokeAllUserTokens(result.decoded.userId)
+const newTokens = await refreshToken(refreshTokenValue)
+```
+
+#### 2. Handle Auth Data Manually
+
+```javascript
+// Before v2.0.0
+app.get('/profile', auth, (req, res) => {
+  const userData = req.jrs.user
+  const sessionData = req.jrs.session
+})
+
+// v2.0.0+
+app.get('/profile', auth, async (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1]
+  const result = await verifyToken(token)
+  const userData = result.decoded
+  const sessionData = result.session
+})
+```
+
+#### 3. Replace Optional Auth
+
+```javascript
+// Before v2.0.0
+app.get('/public', optionalAuth, (req, res) => {
+  if (req.jrs) {
+    // User is authenticated
+  }
+})
+
+// v2.0.0+
+app.get('/public', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1]
+    if (token) {
+      const result = await verifyToken(token)
+      // User is authenticated - use result.decoded
+    }
+  } catch (error) {
+    // No valid token - handle as guest user
+  }
+})
+```
+
+#### 4. Update Parameter Names
+
+```javascript
+// Before v2.0.0
+await revokeAllUserTokens(userId)
+const sessions = await getUserSessions(userId)
+
+// v2.0.0+
+await revokeAllUserTokens(userIdentifier) // userId, id, or email
+const sessions = await getUserSessions(userIdentifier) // userId, id, or email
+```
+
+### 📦 Package Improvements
+
+- **Additional size reduction** - 14.7kB compressed (30% smaller than v1.0.1)
+- **Cleaner codebase** - Removed redundant handler functions
+- **Better maintainability** - Simplified architecture with focused responsibilities
+- **Node.js requirement** - Updated minimum version from 14.0.0 → 16.0.0 (14.x is EOL)
+
+### 🐛 Bug Fixes
+
+- Fixed variable name shadowing in documentation examples
+- Fixed missing TypeScript parameter definitions
+- Fixed inconsistent parameter names across codebase
+- Fixed outdated documentation references
+
+### 📚 Documentation
+
+- Updated API reference with correct function signatures
+- Added comprehensive migration guide
+- Updated all examples to use direct function calls
+- Improved JSDoc comments in TypeScript definitions
+
+---
 
 ## [1.0.1] - 2025-08-24
 
@@ -93,7 +229,7 @@ This is the first stable release of jwt-redis-sessions, a secure, production-rea
 
 ### 🔧 Technical Specifications
 
-- **Node.js**: >=14.0.0
+- **Node.js**: >=16.0.0
 - **Dependencies**: jsonwebtoken@9.x, redis@4.x, dotenv@16.x
 - **TypeScript**: Full type definitions included
 - **Testing**: Jest with comprehensive test suite

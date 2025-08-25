@@ -3,7 +3,18 @@ const { validateAuthHeader, validateSecret } = require('./validation.util')
 const { sendErrorResponse } = require('./utils')
 const config = require('./config')
 
-// Main authentication middleware
+/**
+ * Express middleware for JWT authentication
+ * Validates the authorization header and verifies the token
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ * @returns {Promise<void>} Calls next() if authentication succeeds, sends error response otherwise
+ * @example
+ * app.get('/protected', auth, (req, res) => {
+ *   res.json({ message: 'Authenticated!' })
+ * })
+ */
 exports.auth = async (req, res, next) => {
   try {
     // Validate JWT secret at startup
@@ -12,13 +23,8 @@ exports.auth = async (req, res, next) => {
     // Extract and validate token
     const token = validateAuthHeader(req.headers.authorization)
 
-    // Verify token (includes blacklist check)
-    const result = await verifyToken(token)
-
-    // Attach user and session info to request
-    req.user = result.decoded
-    req.session = result.session
-    req.token = token
+    // Verify token (includes blacklist check and fingerprinting)
+    await verifyToken(token, req)
 
     return next()
   } catch (error) {
@@ -26,29 +32,15 @@ exports.auth = async (req, res, next) => {
   }
 }
 
-// Optional authentication middleware (doesn't fail if no token)
-exports.optionalAuth = async (req, res, next) => {
-  try {
-    // If no authorization header, just continue
-    if (!req.headers.authorization) {
-      return next()
-    }
-
-    // Try to authenticate
-    const token = validateAuthHeader(req.headers.authorization)
-    const result = await verifyToken(token)
-    req.user = result.decoded
-    req.session = result.session
-    req.token = token
-  } catch (error) {
-    // Log error but don't fail the request
-    console.error('Optional auth failed:', error.message)
-  }
-
-  return next()
-}
-
-// Rate limiting middleware
+/**
+ * Creates rate limiting middleware to prevent brute force attacks
+ * @param {number} [maxAttempts=5] - Maximum number of attempts allowed
+ * @param {number} [windowMs=900000] - Time window in milliseconds (default: 15 minutes)
+ * @param {number} [maxMapSize=10000] - Maximum size of the attempts map to prevent memory exhaustion
+ * @returns {Function} Express middleware function
+ * @example
+ * app.use('/api/login', rateLimit(5, 15 * 60 * 1000)) // 5 attempts per 15 minutes
+ */
 exports.rateLimit = (maxAttempts = 5, windowMs = 15 * 60 * 1000, maxMapSize = 10000) => {
   const attempts = new Map()
 

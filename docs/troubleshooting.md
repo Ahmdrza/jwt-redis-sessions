@@ -74,7 +74,7 @@ app.use(
 **Solution**: Import types explicitly:
 
 ```typescript
-import type { AuthRequest, TokenData } from 'jwt-redis-sessions'
+import type { TokenData } from 'jwt-redis-sessions'
 ```
 
 ## Debugging Tips

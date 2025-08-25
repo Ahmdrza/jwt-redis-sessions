@@ -90,9 +90,9 @@ describe('Validation Utilities', () => {
       expect(() => validation.validateTokenData(validData)).not.toThrow()
     })
 
-    it('should throw ValidationError for null or undefined data', () => {
-      expect(() => validation.validateTokenData(null)).toThrow(ValidationError)
-      expect(() => validation.validateTokenData(undefined)).toThrow(ValidationError)
+    it('should accept null and undefined data', () => {
+      expect(() => validation.validateTokenData(null)).not.toThrow()
+      expect(() => validation.validateTokenData(undefined)).not.toThrow()
     })
 
     it('should throw ValidationError for non-object data', () => {
@@ -111,13 +111,17 @@ describe('Validation Utilities', () => {
       expect(() => validation.validateTokenData(new Date())).toThrow(ValidationError)
     })
 
-    it('should throw ValidationError for empty object', () => {
-      expect(() => validation.validateTokenData({})).toThrow(ValidationError)
+    it('should accept empty object', () => {
+      expect(() => validation.validateTokenData({})).not.toThrow()
     })
 
-    it('should throw ValidationError for object without required fields', () => {
-      expect(() => validation.validateTokenData({ name: 'John', age: 30 })).toThrow(ValidationError)
-      expect(() => validation.validateTokenData({ name: 'Admin User' })).toThrow(ValidationError)
+    it('should accept object with any fields', () => {
+      expect(() => validation.validateTokenData({ name: 'John', age: 30 })).not.toThrow()
+      expect(() => validation.validateTokenData({ name: 'Admin User' })).not.toThrow()
+      expect(() => validation.validateTokenData({ customId: 'abc123' })).not.toThrow()
+      expect(() =>
+        validation.validateTokenData({ role: 'admin', permissions: ['read', 'write'] })
+      ).not.toThrow()
     })
 
     it('should accept object with additional fields', () => {
@@ -132,11 +136,8 @@ describe('Validation Utilities', () => {
     })
 
     it('should throw specific error messages', () => {
-      try {
-        validation.validateTokenData(null)
-      } catch (error) {
-        expect(error.message).toBe('Token data must be an object')
-      }
+      // Null is now valid
+      expect(() => validation.validateTokenData(null)).not.toThrow()
 
       try {
         validation.validateTokenData('string')
@@ -147,14 +148,11 @@ describe('Validation Utilities', () => {
       try {
         validation.validateTokenData(new Date())
       } catch (error) {
-        expect(error.message).toBe('Invalid token data structure')
+        expect(error.message).toBe('Token data must be an object')
       }
 
-      try {
-        validation.validateTokenData({})
-      } catch (error) {
-        expect(error.message).toBe('Token data must contain userId, id, or email')
-      }
+      // Empty object should now be valid
+      expect(() => validation.validateTokenData({})).not.toThrow()
     })
 
     it('should return true for valid data', () => {
@@ -286,11 +284,11 @@ describe('Validation Utilities', () => {
 
     it('should fail authentication flow with invalid data', () => {
       const invalidAuthHeader = 'Basic invalid-token'
-      const invalidTokenData = { name: 'John' } // missing required fields
       const invalidSecret = 'short' // too short
 
       expect(() => validation.validateAuthHeader(invalidAuthHeader)).toThrow(ValidationError)
-      expect(() => validation.validateTokenData(invalidTokenData)).toThrow(ValidationError)
+      // Null is now valid, so use string instead
+      expect(() => validation.validateTokenData('invalid')).toThrow(ValidationError)
       expect(() => validation.validateSecret(invalidSecret)).toThrow(ValidationError)
     })
   })

@@ -17,9 +17,9 @@ module.exports = {
     refreshTokenTTL: parseInt(process.env.REFRESH_TOKEN_TTL || '604800'), // 7 days in seconds
   },
   security: {
-    bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS || '10'),
-    maxLoginAttempts: parseInt(process.env.MAX_LOGIN_ATTEMPTS || '5'),
-    lockoutTime: parseInt(process.env.LOCKOUT_TIME || '900'), // 15 minutes in seconds
     tokenLength: parseInt(process.env.TOKEN_LENGTH || '32'),
+    // Token fingerprinting settings
+    enableFingerprinting: process.env.ENABLE_TOKEN_FINGERPRINTING !== 'false', // Default enabled
+    fingerprintStrict: process.env.FINGERPRINT_STRICT_MODE === 'true', // Default disabled for flexibility
   },
 }

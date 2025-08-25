@@ -1,13 +1,11 @@
+/* eslint-disable no-console */
 require('dotenv').config()
 
 const config = require('./config')
 const redisConfig = require('./redis.config')
 const jwtService = require('./jwt.service')
 const authMiddleware = require('./auth.middleware')
-const refreshHandlers = require('./refresh')
-const logoutHandlers = require('./logout')
 const errors = require('./errors')
-const utils = require('./utils')
 
 // Initialize Redis connection
 let isInitialized = false
@@ -38,15 +36,7 @@ exports.isTokenBlacklisted = wrapAsync(jwtService.isTokenBlacklisted)
 
 // Middleware exports
 exports.auth = authMiddleware.auth
-exports.optionalAuth = authMiddleware.optionalAuth
 exports.rateLimit = authMiddleware.rateLimit
-
-// Refresh exports
-exports.refresh = refreshHandlers.refresh
-
-// Logout exports
-exports.logout = logoutHandlers.logout
-exports.logoutAll = logoutHandlers.logoutAll
 
 // Error classes exports
 exports.AuthError = errors.AuthError
@@ -58,9 +48,6 @@ exports.RedisError = errors.RedisError
 exports.config = config
 exports.initialize = initialize
 exports.closeRedisConnection = redisConfig.closeRedisConnection
-
-// Utility exports
-exports.utils = utils
 
 // Graceful shutdown handler
 const gracefulShutdown = async () => {

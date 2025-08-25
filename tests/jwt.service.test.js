@@ -31,9 +31,13 @@ describe('JWT Service', () => {
     })
 
     it('should throw ValidationError for invalid data', async () => {
-      await expect(jwtService.generateToken({})).rejects.toThrow(ValidationError)
-      await expect(jwtService.generateToken(null)).rejects.toThrow(ValidationError)
+      // Empty object, null, and undefined are now valid
+      await expect(jwtService.generateToken({})).resolves.toBeDefined()
+      await expect(jwtService.generateToken(null)).resolves.toBeDefined()
+      await expect(jwtService.generateToken(undefined)).resolves.toBeDefined()
+      // But non-objects should still fail
       await expect(jwtService.generateToken('string')).rejects.toThrow(ValidationError)
+      await expect(jwtService.generateToken(123)).rejects.toThrow(ValidationError)
     })
 
     it('should throw ValidationError for missing JWT secret', async () => {
@@ -64,7 +68,10 @@ describe('JWT Service', () => {
       expect(result).toHaveProperty('decoded')
       expect(result).toHaveProperty('session')
       expect(result.decoded).toHaveProperty('userId', 'user123')
-      expect(result.decoded).toHaveProperty('type', 'access')
+      // Internal fields should be filtered out
+      expect(result.decoded).not.toHaveProperty('type')
+      expect(result.decoded).not.toHaveProperty('sessionId')
+      expect(result.decoded).not.toHaveProperty('_fp')
       expect(result.session).toHaveProperty('userId', 'user123')
     })
 

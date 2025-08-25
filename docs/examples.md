@@ -11,12 +11,12 @@ const express = require('express')
 const bcrypt = require('bcrypt') // npm install bcrypt
 const {
   generateToken,
+  verifyToken,
+  refreshToken,
+  revokeToken,
+  revokeAllUserTokens,
   auth,
-  optionalAuth,
   rateLimit,
-  logout,
-  logoutAll,
-  refresh,
 } = require('jwt-redis-sessions')
 
 const app = express()
@@ -94,31 +94,71 @@ app.post('/login', rateLimit(), async (req, res) => {
 })
 
 // Protected routes
-app.get('/profile', auth, (req, res) => {
+app.get('/profile', auth, async (req, res) => {
+  // Get user data from token
+  const token = req.headers.authorization?.split(' ')[1]
+  const result = await verifyToken(token)
+
   res.json({
     message: 'Profile data',
-    user: req.user,
+    user: result.decoded,
     sessionInfo: {
-      sessionId: req.session.sessionId,
-      createdAt: req.session.createdAt,
-      lastActivity: req.session.lastActivity,
+      sessionId: result.session.sessionId,
+      createdAt: result.session.createdAt,
+      lastActivity: result.session.lastActivity,
     },
   })
 })
 
-// Public route with optional authentication
-app.get('/public', optionalAuth, (req, res) => {
-  res.json({
-    message: 'This is public content',
-    authenticated: !!req.user,
-    user: req.user || null,
-  })
+// Token management
+app.post('/refresh', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1]
+    if (!token) {
+      return res.status(400).json({ error: 'Refresh token required' })
+    }
+
+    const newTokens = await refreshToken(token)
+    res.json(newTokens)
+  } catch (error) {
+    res.status(401).json({ error: error.message })
+  }
 })
 
-// Token management
-app.post('/refresh', refresh)
-app.post('/logout', auth, logout)
-app.post('/logout-all', auth, logoutAll)
+app.post('/logout', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1]
+    if (!token) {
+      return res.status(400).json({ error: 'Token required' })
+    }
+
+    await revokeToken(token)
+    res.json({ success: true, message: 'Logged out successfully' })
+  } catch (error) {
+    res.status(401).json({ error: error.message })
+  }
+})
+
+app.post('/logout-all', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1]
+    if (!token) {
+      return res.status(400).json({ error: 'Token required' })
+    }
+
+    const result = await verifyToken(token)
+    const userIdentifier = result.decoded.userId || result.decoded.id || result.decoded.email
+
+    if (!userIdentifier) {
+      return res.status(400).json({ error: 'User identifier not found' })
+    }
+
+    const logoutResult = await revokeAllUserTokens(userIdentifier)
+    res.json({ success: true, message: logoutResult.message })
+  } catch (error) {
+    res.status(401).json({ error: error.message })
+  }
+})
 
 // Health check
 app.get('/health', (req, res) => {
