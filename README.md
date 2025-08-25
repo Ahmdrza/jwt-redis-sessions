@@ -14,7 +14,7 @@ A secure, production-ready JWT authentication and session management library for
 
 ## Prerequisites
 
-- **Node.js** 14.0 or higher
+- **Node.js** 16.0 or higher
 - **Redis** 6.0 or higher
 - **npm** or **yarn** package manager
 
