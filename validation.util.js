@@ -41,6 +41,78 @@ exports.validateTokenData = (data) => {
     throw new ValidationError('Token data must be an object')
   }
 
+  const config = require('./config')
+  const allowedFields = new Set(config.security.allowedTokenFields)
+  const reservedFields = new Set([
+    'iat',
+    'exp',
+    'nbf',
+    'iss',
+    'aud',
+    'sub',
+    'jti',
+    'sessionId',
+    'type',
+    '_fp',
+    '_fpTime',
+  ])
+  const sensitivePattern = /(?:password|passwd|pwd|secret|hash|token|credential|private.?key)/i
+
+  const validateValue = (field, value) => {
+    if (
+      value === null ||
+      typeof value === 'string' ||
+      (typeof value === 'number' && Number.isFinite(value)) ||
+      typeof value === 'boolean'
+    ) {
+      return
+    }
+    if (
+      Array.isArray(value) &&
+      value.length <= 100 &&
+      value.every(
+        (item) =>
+          item === null ||
+          typeof item === 'string' ||
+          (typeof item === 'number' && Number.isFinite(item)) ||
+          typeof item === 'boolean'
+      )
+    ) {
+      return
+    }
+    throw new ValidationError(
+      `Token data field '${field}' must be a primitive or an array of primitives`
+    )
+  }
+
+  for (const [field, value] of Object.entries(data)) {
+    if (reservedFields.has(field)) {
+      throw new ValidationError(`Token data field '${field}' is reserved`)
+    }
+    if (sensitivePattern.test(field)) {
+      throw new ValidationError(`Sensitive token data field '${field}' is not allowed`)
+    }
+    if (!allowedFields.has(field)) {
+      throw new ValidationError(
+        `Token data field '${field}' is not allowed; configure JWT_ALLOWED_TOKEN_FIELDS explicitly`
+      )
+    }
+    if (['userId', 'id', 'email'].includes(field) && (typeof value !== 'string' || !value)) {
+      throw new ValidationError(`Token data field '${field}' must be a non-empty string`)
+    }
+    validateValue(field, value)
+  }
+
+  let serialized
+  try {
+    serialized = JSON.stringify(data)
+  } catch {
+    throw new ValidationError('Token data must be JSON serializable')
+  }
+  if (serialized.length > 4096) {
+    throw new ValidationError('Token data must not exceed 4096 bytes')
+  }
+
   return true
 }
 
@@ -60,20 +132,36 @@ exports.validateSecret = (secret) => {
   return true
 }
 
+exports.validateConfig = (config) => {
+  exports.validateSecret(config.jwt.secret)
+  for (const [name, value] of [
+    ['redis.sessionTTL', config.redis.sessionTTL],
+    ['redis.refreshTokenTTL', config.redis.refreshTokenTTL],
+    ['security.tokenLength', config.security.tokenLength],
+  ]) {
+    if (!Number.isInteger(value) || value < 1) {
+      throw new ValidationError(`${name} must be a positive integer`, 500)
+    }
+  }
+  if (config.security.tokenLength < 16) {
+    throw new ValidationError('security.tokenLength must be at least 16 bytes', 500)
+  }
+  if (!Array.isArray(config.security.allowedTokenFields)) {
+    throw new ValidationError('security.allowedTokenFields must be an array', 500)
+  }
+  if (typeof config.redis.keyPrefix !== 'string' || !config.redis.keyPrefix) {
+    throw new ValidationError('redis.keyPrefix must be a non-empty string', 500)
+  }
+  return true
+}
+
 // Constant-time string comparison to prevent timing attacks
 exports.constantTimeCompare = (a, b) => {
   if (typeof a !== 'string' || typeof b !== 'string') {
     return false
   }
 
-  if (a.length !== b.length) {
-    return false
-  }
-
-  let result = 0
-  for (let i = 0; i < a.length; i++) {
-    result |= a.charCodeAt(i) ^ b.charCodeAt(i)
-  }
-
-  return result === 0
+  const aBuffer = Buffer.from(a)
+  const bBuffer = Buffer.from(b)
+  return aBuffer.length === bBuffer.length && require('crypto').timingSafeEqual(aBuffer, bBuffer)
 }

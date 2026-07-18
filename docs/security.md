@@ -1,194 +1,68 @@
-# Security Best Practices & Production Deployment
+# Security and production deployment
 
-## 🔒 Essential Security Requirements
+## Required controls
 
-### 1. Strong JWT Secret
+- Run a supported Node.js release (22 or 24 LTS) and Redis 7 or newer.
+- Supply `JWT_SECRET` through the host's secret manager. Use at least 32 random bytes; rotate it
+  using an application-controlled rollout.
+- Use TLS to Redis with a `rediss://` URL, authentication, network isolation, and least privilege.
+- Terminate HTTPS at the application or a trusted proxy.
+- Keep access tokens short-lived. The defaults are 15 minutes for access and seven days for
+  refresh/session state.
+- Apply `rateLimit()` to authentication endpoints or use an equivalent distributed gateway
+  limiter. It stores counters in Redis and fails through Express error handling if Redis fails.
+- Call `closeRedisConnection()` from host-owned shutdown handling. This package never installs
+  signal listeners and never exits the process.
 
-Generate a cryptographically secure secret in production:
+## Supported environment variables
 
-```bash
-JWT_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
-```
+| Variable                      | Default                            | Purpose                                            |
+| ----------------------------- | ---------------------------------- | -------------------------------------------------- |
+| `JWT_SECRET`                  | none                               | HMAC secret, minimum 32 characters                 |
+| `JWT_ACCESS_TOKEN_EXPIRY`     | `15m`                              | Access JWT lifetime                                |
+| `JWT_REFRESH_TOKEN_EXPIRY`    | `7d`                               | Refresh JWT lifetime                               |
+| `JWT_ISSUER`                  | `jwt-redis-sessions`               | Required issuer claim                              |
+| `JWT_AUDIENCE`                | `jwt-redis-sessions-users`         | Required audience claim                            |
+| `REDIS_URL`                   | `redis://localhost:6379`           | Redis URL; use `rediss://` for TLS                 |
+| `REDIS_PASSWORD`              | none                               | Redis password when not embedded in URL            |
+| `REDIS_DB`                    | `0`                                | Redis database                                     |
+| `REDIS_KEY_PREFIX`            | `jwt-redis-sessions:`              | Key namespace                                      |
+| `SESSION_TTL`                 | `604800`                           | Sliding session TTL in seconds                     |
+| `REFRESH_TOKEN_TTL`           | `604800`                           | Refresh digest TTL in seconds                      |
+| `TOKEN_LENGTH`                | `32`                               | Random session ID bytes                            |
+| `JWT_ALLOWED_TOKEN_FIELDS`    | `userId,id,email,role,permissions` | Payload allowlist                                  |
+| `ENABLE_TOKEN_FINGERPRINTING` | `true`                             | Add request fingerprint when a request is supplied |
+| `FINGERPRINT_STRICT_MODE`     | `false`                            | Reject fingerprint mismatches                      |
 
-### 2. HTTPS Only
+`REDIS_SSL`, `MAX_LOGIN_ATTEMPTS`, `LOCKOUT_TIME`, and `BCRYPT_ROUNDS` are not supported. Put TLS
+in `REDIS_URL`, and configure rate-limit arguments in application code.
 
-Always use HTTPS in production:
+## Cookie and token transport
 
-```javascript
-// Redirect HTTP to HTTPS
-app.use((req, res, next) => {
-  if (req.header('x-forwarded-proto') !== 'https') {
-    res.redirect(`https://${req.header('host')}${req.url}`)
-  } else {
-    next()
-  }
+Access tokens are bearer credentials. Send them only in an `Authorization: Bearer` header over
+HTTPS. If a browser stores refresh tokens in cookies, use `HttpOnly`, `Secure`, an appropriate
+`SameSite` policy, a narrow `Path`, and CSRF protection whenever cookies may be sent cross-site.
+Do not put tokens in URLs, logs, analytics events, or local storage for high-risk applications.
+
+Redis stores SHA-256 refresh digests and uses SHA-256 token digests in blacklist key names. Redis
+session records still contain the explicitly allowed identity/authorization fields, so Redis data
+must be treated as confidential. Refresh rotation and activity updates use atomic Redis scripts;
+logout-all also retains small hashed per-user revocation-generation keys without a TTL. Do not
+delete those generation keys independently while tokens signed by the same JWT secret may exist.
+
+## Host-owned lifecycle
+
+```js
+require('dotenv').config() // optional and controlled by the application
+const sessions = require('jwt-redis-sessions')
+
+await sessions.initialize()
+
+process.once('SIGTERM', async () => {
+  await sessions.closeRedisConnection()
+  // The application decides when and how to exit.
 })
 ```
 
-### 3. Secure Redis Connection
-
-```env
-# Use SSL/TLS in production
-REDIS_URL=rediss://username:password@redis-host:6380
-
-# Or with explicit SSL config
-REDIS_SSL=true
-REDIS_HOST=your-redis-host.com
-REDIS_PORT=6380
-REDIS_PASSWORD=your-secure-password
-```
-
-### 4. Environment-Based Configuration
-
-```env
-# Production settings
-NODE_ENV=production
-JWT_ACCESS_TOKEN_EXPIRY=15m    # Short access token lifetime
-JWT_REFRESH_TOKEN_EXPIRY=7d    # Reasonable refresh token lifetime
-SESSION_TTL=86400              # 24 hours
-MAX_LOGIN_ATTEMPTS=3           # Strict rate limiting
-LOCKOUT_TIME=1800             # 30 minutes lockout
-```
-
-### 5. Security Headers
-
-```javascript
-const helmet = require('helmet') // npm install helmet
-
-app.use(
-  helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
-        scriptSrc: ["'self'"],
-        imgSrc: ["'self'", 'data:', 'https:'],
-      },
-    },
-    hsts: {
-      maxAge: 31536000, // 1 year
-      includeSubDomains: true,
-      preload: true,
-    },
-  })
-)
-```
-
-## 🚀 Production Deployment Checklist
-
-### Before Deployment
-
-- [ ] Generate secure `JWT_SECRET` (32+ characters)
-- [ ] Configure Redis with SSL/TLS and authentication
-- [ ] Set up proper CORS origins
-- [ ] Enable rate limiting on all auth endpoints
-- [ ] Configure secure session and cookie settings
-- [ ] Set up monitoring and logging
-- [ ] Test token refresh flows
-- [ ] Verify logout functionality works correctly
-
-### Production Environment Variables
-
-```env
-# Security
-NODE_ENV=production
-JWT_SECRET=your-64-character-hex-secret-here
-JWT_ACCESS_TOKEN_EXPIRY=15m
-JWT_REFRESH_TOKEN_EXPIRY=7d
-
-# Redis (with SSL)
-REDIS_URL=rediss://username:password@your-redis-host.com:6380
-
-# Rate Limiting
-MAX_LOGIN_ATTEMPTS=3
-LOCKOUT_TIME=1800
-
-# Sessions
-SESSION_TTL=86400
-REFRESH_TOKEN_TTL=604800
-
-# Optional: Custom configuration
-JWT_ISSUER=your-app-name
-JWT_AUDIENCE=your-app-users
-REDIS_KEY_PREFIX=your-app:jwt:
-```
-
-## 🛡️ Advanced Security Features
-
-### 1. Token Binding (Optional)
-
-```javascript
-// Bind tokens to IP address
-app.use('/auth', (req, res, next) => {
-  req.clientIP = req.ip || req.connection.remoteAddress
-  next()
-})
-
-// Include IP in token payload
-const tokens = await generateToken({
-  userId: user.id,
-  email: user.email,
-  boundIP: req.clientIP,
-})
-
-// Verify IP binding in middleware
-app.use(auth, async (req, res, next) => {
-  const token = req.headers.authorization?.split(' ')[1]
-  const result = await verifyToken(token)
-
-  if (result.decoded.boundIP && result.decoded.boundIP !== req.clientIP) {
-    return res.status(401).json({ error: 'Token IP binding mismatch' })
-  }
-  next()
-})
-```
-
-### 2. Suspicious Activity Detection
-
-```javascript
-// Track failed attempts per IP
-const suspiciousIPs = new Map()
-
-app.use((err, req, res, next) => {
-  if (err.statusCode === 401) {
-    const ip = req.ip
-    const attempts = suspiciousIPs.get(ip) || 0
-    suspiciousIPs.set(ip, attempts + 1)
-
-    // Block after many failures
-    if (attempts > 20) {
-      return res.status(429).json({ error: 'IP temporarily blocked' })
-    }
-  }
-  next(err)
-})
-```
-
-### 3. Production Monitoring
-
-```javascript
-// Monitor authentication events
-const { generateToken, revokeToken } = require('jwt-redis-sessions')
-
-// Add logging wrapper
-const originalGenerateToken = generateToken
-const generateTokenWithLogging = async (data) => {
-  const result = await originalGenerateToken(data)
-  console.log(`Token generated for user: ${data.userId || data.id}`)
-  // Send to your monitoring service
-  return result
-}
-
-// Monitor failed authentication attempts
-app.use((err, req, res, next) => {
-  if (err.statusCode === 401) {
-    console.log(`Failed auth attempt from ${req.ip}:`, {
-      url: req.url,
-      userAgent: req.get('User-Agent'),
-      timestamp: new Date().toISOString(),
-    })
-    // Alert on suspicious patterns
-  }
-  next(err)
-})
-```
+An already connected Redis client can be supplied with
+`initialize({ redisClient: client })`. The package will not close a client it does not own.

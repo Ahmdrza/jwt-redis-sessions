@@ -115,24 +115,21 @@ describe('Validation Utilities', () => {
       expect(() => validation.validateTokenData({})).not.toThrow()
     })
 
-    it('should accept object with any fields', () => {
-      expect(() => validation.validateTokenData({ name: 'John', age: 30 })).not.toThrow()
-      expect(() => validation.validateTokenData({ name: 'Admin User' })).not.toThrow()
-      expect(() => validation.validateTokenData({ customId: 'abc123' })).not.toThrow()
+    it('should accept only configured fields', () => {
       expect(() =>
         validation.validateTokenData({ role: 'admin', permissions: ['read', 'write'] })
       ).not.toThrow()
+      expect(() => validation.validateTokenData({ name: 'John' })).toThrow(ValidationError)
     })
 
-    it('should accept object with additional fields', () => {
-      const validData = {
-        userId: 'user123',
-        email: 'test@example.com',
-        profile: { name: 'John Doe', age: 30 },
-        metadata: { lastLogin: new Date() },
-      }
-
-      expect(() => validation.validateTokenData(validData)).not.toThrow()
+    it('should reject sensitive, reserved, and structured values', () => {
+      expect(() => validation.validateTokenData({ passwordHash: 'secret' })).toThrow(
+        /Sensitive token data field/
+      )
+      expect(() => validation.validateTokenData({ sessionId: 'attacker-controlled' })).toThrow(
+        /reserved/
+      )
+      expect(() => validation.validateTokenData({ role: { name: 'admin' } })).toThrow(/primitive/)
     })
 
     it('should throw specific error messages', () => {

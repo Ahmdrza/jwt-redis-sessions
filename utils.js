@@ -49,8 +49,8 @@ exports.sendSuccessResponse = (res, data, message = 'Success', statusCode = 200)
 
 // Redis key management utility to avoid string duplication
 class RedisKeyBuilder {
-  constructor() {
-    this.prefix = config.redis.keyPrefix
+  get prefix() {
+    return config.redis.keyPrefix
   }
 
   // Session keys
@@ -65,12 +65,18 @@ class RedisKeyBuilder {
 
   // Blacklist keys
   blacklistKey(token) {
-    return `${this.prefix}blacklist:${token}`
+    return `${this.prefix}blacklist:${exports.hashToken(token)}`
   }
 
-  // User session pattern (for SCAN operations)
-  userSessionPattern(userId) {
-    return `${this.prefix}session:*${userId}*`
+  // Hash user identifiers so email addresses and IDs do not leak in key names.
+  userSessionsKey(userIdentifier) {
+    return `${this.prefix}user-sessions:${exports.hashToken(String(userIdentifier))}`
+  }
+
+  // Persistent generation counters make logout-all linearizable with login,
+  // refresh, and verification across application instances.
+  userGenerationKey(userIdentifier) {
+    return `${this.prefix}user-generation:${exports.hashToken(String(userIdentifier))}`
   }
 
   // Get all keys pattern
@@ -81,6 +87,9 @@ class RedisKeyBuilder {
 
 // Export singleton instance
 exports.redisKeys = new RedisKeyBuilder()
+
+// One-way identifiers keep complete bearer credentials and user PII out of Redis keys/values.
+exports.hashToken = (value) => crypto.createHash('sha256').update(value).digest('hex')
 
 // ==================== JWT UTILITIES ====================
 

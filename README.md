@@ -8,14 +8,14 @@ A secure, production-ready JWT authentication and session management library for
 - 🔄 **Refresh Token Rotation** - Automatic refresh token rotation for enhanced security
 - 🚪 **Session Management** - Redis-based session storage with automatic cleanup
 - 🛡️ **Token Revocation** - Logout functionality with token blacklisting
-- ⚡ **Rate Limiting** - Built-in rate limiting middleware
+- ⚡ **Distributed Rate Limiting** - Redis-backed rate limiting across application instances
 - 🔍 **TypeScript Support** - Full TypeScript definitions included
 - 🚨 **Error Handling** - Comprehensive error handling with custom error classes
 
 ## Prerequisites
 
-- **Node.js** 16.0 or higher
-- **Redis** 6.0 or higher
+- **Node.js** 22 or 24 LTS
+- **Redis** 7.0 or higher
 - **npm** or **yarn** package manager
 
 ## Installation
@@ -38,12 +38,12 @@ brew services start redis
 sudo systemctl start redis-server
 
 # Docker
-docker run -d -p 6379:6379 redis:7-alpine
+docker run -d -p 6379:6379 redis:7.4.9-alpine
 ```
 
 ### 2. Set up environment variables
 
-Create a `.env` file:
+Set environment variables in the host application (the library does not load `.env` files):
 
 ```env
 # Required: Strong JWT secret (minimum 32 characters)
@@ -69,7 +69,6 @@ JWT_REFRESH_TOKEN_EXPIRY=7d
 const express = require('express')
 const {
   generateToken,
-  verifyToken,
   refreshToken,
   revokeToken,
   revokeAllUserTokens,
@@ -104,15 +103,10 @@ app.post('/login', async (req, res) => {
 
 // Protected route
 app.get('/profile', auth, async (req, res) => {
-  // The auth middleware validates the token but doesn't attach data to req
-  // You can verify the token again if you need user data
-  const token = req.headers.authorization?.split(' ')[1]
-  const result = await verifyToken(token)
-
   res.json({
     message: 'This is a protected route',
-    user: result.decoded,
-    session: result.session,
+    user: req.auth.decoded,
+    session: req.auth.session,
   })
 })
 
@@ -147,16 +141,9 @@ app.post('/logout', async (req, res) => {
 })
 
 // Logout all sessions for the user
-app.post('/logout-all', async (req, res) => {
+app.post('/logout-all', auth, async (req, res) => {
   try {
-    const token = req.headers.authorization?.split(' ')[1]
-    if (!token) {
-      return res.status(400).json({ error: 'Token required' })
-    }
-
-    // Verify token to get user identifier
-    const result = await verifyToken(token)
-    const userIdentifier = result.decoded.userId || result.decoded.id || result.decoded.email
+    const userIdentifier = req.auth.decoded.userId || req.auth.decoded.id || req.auth.decoded.email
 
     if (!userIdentifier) {
       return res.status(400).json({ error: 'User identifier not found in token' })
@@ -190,6 +177,28 @@ All configuration is done through environment variables. See [.env.example](.env
 - `REDIS_HOST` - Redis host (default: 'localhost')
 - `REDIS_PORT` - Redis port (default: 6379)
 - `REDIS_PASSWORD` - Redis password (optional)
+- `SESSION_TTL` - Sliding session TTL in seconds (default: 604800)
+- `REFRESH_TOKEN_TTL` - Refresh-state TTL in seconds (default: 604800)
+
+### Payload Configuration
+
+- `JWT_ALLOWED_TOKEN_FIELDS` - Comma-separated allowlist (default: `userId,id,email,role,permissions`)
+
+Token/session data accepts primitives and arrays of primitives only. Reserved JWT claims and
+sensitive-looking fields such as passwords, hashes, secrets, and credentials are rejected.
+
+Configuration can also be supplied before the first operation:
+
+```javascript
+const sessions = require('jwt-redis-sessions')
+
+sessions.configure({
+  jwt: { secret: process.env.JWT_SECRET },
+  redis: { url: 'rediss://redis.internal:6380' },
+})
+```
+
+Configuration becomes immutable after Redis initialization.
 
 ## API Overview
 
@@ -203,7 +212,7 @@ All configuration is done through environment variables. See [.env.example](.env
 ### Middleware
 
 - `auth` - Main authentication middleware
-- `rateLimit(maxAttempts, windowMs, maxMapSize)` - Rate limiting middleware
+- `rateLimit(maxAttempts, windowMs)` - Redis-backed rate limiting middleware
 
 ## Documentation
 
@@ -211,12 +220,15 @@ All configuration is done through environment variables. See [.env.example](.env
 - **[API Reference](./docs/api-reference.md)** - Detailed API documentation
 - **[Troubleshooting](./docs/troubleshooting.md)** - Common issues and solutions
 - **[Security Guide](./docs/security.md)** - Production security best practices
+- **[Threat Model](./docs/threat-model.md)** - Security boundaries and residual risks
+- **[Migration Guide](./MIGRATION.md)** - Required changes from earlier releases
 
 ## Testing
 
 ```bash
 npm test
 npm run test:coverage
+npm run test:redis:memory # Real Redis 7.4.9 without Docker
 ```
 
 ## Contributing

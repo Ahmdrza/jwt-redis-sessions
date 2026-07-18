@@ -60,16 +60,12 @@ await revokeAllUserTokens('user123')
 
 ### `auth`
 
-Main authentication middleware that validates tokens. It verifies the token but doesn't attach data to the request object.
+Main authentication middleware. It verifies once and attaches the result to `req.auth`.
 
 ```javascript
 app.get('/protected', auth, async (req, res) => {
-  // Token is valid if we reach here
-  // If you need user data, verify the token again:
-  const token = req.headers.authorization?.split(' ')[1]
-  const result = await verifyToken(token)
-  console.log(result.decoded) // User data
-  console.log(result.session) // Session data
+  console.log(req.auth.decoded) // User data
+  console.log(req.auth.session) // Session data
 })
 ```
 
@@ -134,18 +130,46 @@ console.log(sessions)
 
 ### Manual Initialization
 
-By default, Redis connection is initialized on first use. You can manually initialize:
+By default, Redis is initialized on first use. You can initialize explicitly, optionally with an
+already-connected client. Externally supplied clients are not closed by the package.
 
 ```javascript
+const { createClient } = require('redis')
 const { initialize, closeRedisConnection } = require('jwt-redis-sessions')
 
-// Initialize
-await initialize()
+const redisClient = createClient({ url: process.env.REDIS_URL })
+await redisClient.connect()
+await initialize({ redisClient })
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   await closeRedisConnection()
-  process.exit(0)
+  await redisClient.quit()
+  // The host application decides whether and when to exit.
+})
+```
+
+### Explicit Configuration
+
+Call `configure()` before initialization, or pass the same overrides to `initialize({ config })`.
+Unknown options and invalid values are rejected, and configuration cannot change after initialization.
+
+```javascript
+const sessions = require('jwt-redis-sessions')
+
+sessions.configure({
+  jwt: {
+    secret: process.env.JWT_SECRET,
+    issuer: 'accounts-api',
+    audience: 'accounts-users',
+  },
+  redis: {
+    url: 'rediss://redis.internal:6380',
+    keyPrefix: 'accounts:sessions:',
+  },
+  security: {
+    allowedTokenFields: ['userId', 'email', 'role', 'permissions'],
+  },
 })
 ```
 
@@ -166,10 +190,8 @@ app.post('/login', async (req, res) => {
   res.json(tokens)
 })
 
-app.get('/profile', auth, async (req: any, res) => {
-  const token = req.headers.authorization?.split(' ')[1]
-  const result = await verifyToken(token!)
-  res.json({ user: result.decoded })
+app.get('/profile', auth, async (req, res) => {
+  res.json({ user: req.auth?.decoded, session: req.auth?.session })
 })
 ```
 

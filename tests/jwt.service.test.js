@@ -146,12 +146,15 @@ describe('JWT Service', () => {
       expect(result.refreshToken).not.toBe(refreshToken)
     })
 
-    it('should delete old refresh token (rotation)', async () => {
-      const originalDelCalls = mockRedisClient.del.mock.calls.length
+    it('should atomically replace refresh state during rotation', async () => {
+      const redisHelper = require('../redis.config')
 
-      await jwtService.refreshToken(refreshToken)
+      const result = await jwtService.refreshToken(refreshToken)
 
-      expect(mockRedisClient.del).toHaveBeenCalledTimes(originalDelCalls + 1)
+      expect(redisHelper.rotateSessionAtomic).toHaveBeenCalledTimes(1)
+      expect(mockRedisClient.getDel).not.toHaveBeenCalled()
+      await expect(jwtService.refreshToken(refreshToken)).rejects.toThrow(TokenError)
+      await expect(jwtService.refreshToken(result.refreshToken)).resolves.toBeDefined()
     })
 
     it('should throw TokenError for invalid refresh token', async () => {
@@ -212,12 +215,11 @@ describe('JWT Service', () => {
       expect(result).toBe(true)
     })
 
-    it('should return false if Redis check fails', async () => {
+    it('should fail closed if Redis check fails', async () => {
       // Mock Redis error
       mockRedisClient.exists.mockRejectedValueOnce(new Error('Redis error'))
 
-      const result = await jwtService.isTokenBlacklisted('some-token')
-      expect(result).toBe(false)
+      await expect(jwtService.isTokenBlacklisted('some-token')).rejects.toThrow('Redis error')
     })
   })
 
