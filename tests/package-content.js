@@ -12,20 +12,21 @@ const output = execFileSync('npm', ['pack', '--dry-run', '--json'], {
 const pack = JSON.parse(output)[0]
 const files = new Set(pack.files.map((file) => file.path))
 
-for (const required of [
-  'README.md',
-  'SECURITY.md',
-  'MIGRATION.md',
-  'docs/security.md',
-  'docs/api-reference.md',
-  'index.d.ts',
-]) {
+for (const required of ['README.md', 'SECURITY.md', 'MIGRATION.md', 'index.d.ts']) {
   if (!files.has(required)) {
     throw new Error(`Package is missing required file: ${required}`)
   }
 }
 
-for (const forbidden of ['.env', 'tests/setup.js', 'eslint.config.js', 'jest.config.js']) {
+for (const forbidden of [
+  '.env',
+  'CHANGELOG.md',
+  'docs/security.md',
+  'docs/api-reference.md',
+  'tests/setup.js',
+  'eslint.config.js',
+  'jest.config.js',
+]) {
   if (files.has(forbidden)) {
     throw new Error(`Package includes forbidden file: ${forbidden}`)
   }
