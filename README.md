@@ -216,12 +216,12 @@ Configuration becomes immutable after Redis initialization.
 
 ## Documentation
 
-- **[Complete Examples](./docs/examples.md)** - Full working code examples
-- **[API Reference](./docs/api-reference.md)** - Detailed API documentation
-- **[Troubleshooting](./docs/troubleshooting.md)** - Common issues and solutions
-- **[Security Guide](./docs/security.md)** - Production security best practices
-- **[Threat Model](./docs/threat-model.md)** - Security boundaries and residual risks
-- **[Migration Guide](./MIGRATION.md)** - Required changes from earlier releases
+- **[Complete Examples](https://github.com/Ahmdrza/jwt-redis-sessions/blob/main/docs/examples.md)** - Full working code examples
+- **[API Reference](https://github.com/Ahmdrza/jwt-redis-sessions/blob/main/docs/api-reference.md)** - Detailed API documentation
+- **[Troubleshooting](https://github.com/Ahmdrza/jwt-redis-sessions/blob/main/docs/troubleshooting.md)** - Common issues and solutions
+- **[Security Guide](https://github.com/Ahmdrza/jwt-redis-sessions/blob/main/docs/security.md)** - Production security best practices
+- **[Threat Model](https://github.com/Ahmdrza/jwt-redis-sessions/blob/main/docs/threat-model.md)** - Security boundaries and residual risks
+- **[Migration Guide](https://github.com/Ahmdrza/jwt-redis-sessions/blob/main/MIGRATION.md)** - Required changes from earlier releases
 
 ## Testing
 
