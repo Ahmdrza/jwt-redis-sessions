@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24]
+    services:
+      redis:
+        image: redis:7.4.9-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test -- --runInBand
+        env:
+          JWT_SECRET: ci-secret-that-is-at-least-32-characters-long
+          REDIS_URL: redis://localhost:6379
+      - run: npm run test:redis
+        env:
+          REDIS_URL: redis://localhost:6379
+      - run: npm run typecheck
+      - run: npm run check:package
+      - run: npm audit --omit=dev --audit-level=high

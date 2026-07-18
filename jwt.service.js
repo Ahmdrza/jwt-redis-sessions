@@ -1,23 +1,116 @@
 const jwt = require('jsonwebtoken')
 const crypto = require('crypto')
 const config = require('./config')
-const { validateSecret, validateTokenData, constantTimeCompare } = require('./validation.util')
+const { validateSecret, validateTokenData } = require('./validation.util')
 const {
   verifyJwtToken,
   handleJwtError,
   getUnixTimestamp,
   getISOTimestamp,
   redisKeys,
+  hashToken,
   addFingerprintToTokenData,
   verifyFingerprint,
   getCleanUserData,
 } = require('./utils')
-const { AuthError, TokenError } = require('./errors')
+const { AuthError, TokenError, ValidationError } = require('./errors')
 const redisHelper = require('./redis.config')
+
+const validateToken = (token, label = 'Token') => {
+  if (typeof token !== 'string' || !token) {
+    throw new TokenError(`${label} must be a non-empty string`)
+  }
+}
+
+const getUserIdentifiers = (data) =>
+  ['userId', 'id', 'email']
+    .map((field) => data[field])
+    .filter((value) => typeof value === 'string' && value.length > 0)
+
+const getTokenData = (data) => {
+  const tokenData = {}
+  for (const field of config.security.allowedTokenFields) {
+    if (Object.prototype.hasOwnProperty.call(data, field)) {
+      tokenData[field] = data[field]
+    }
+  }
+  return tokenData
+}
+
+const getIndexKeys = (data) =>
+  getUserIdentifiers(data).map((identifier) => redisKeys.userSessionsKey(identifier))
+
+const getGenerationState = async (data) => {
+  const keys = getUserIdentifiers(data).map((identifier) => redisKeys.userGenerationKey(identifier))
+  const values = await Promise.all(keys.map((key) => redisHelper.getGeneration(key)))
+  return keys.map((key, index) => ({ key, value: values[index] }))
+}
+
+const getStoredGenerationState = (session) =>
+  Array.isArray(session._userGenerations) ? session._userGenerations : []
+
+const getPublicSession = (session) => {
+  const publicSession = { ...session }
+  delete publicSession._userGenerations
+  delete publicSession.sessionVersion
+  return publicSession
+}
+
+const deleteSession = async (session) => {
+  await redisHelper.deleteSessionAtomic({
+    sessionKey: redisKeys.sessionKey(session.sessionId),
+    refreshKey: redisKeys.refreshKey(session.sessionId),
+    indexKeys: getIndexKeys(session),
+    sessionId: session.sessionId,
+  })
+}
 
 // Generate a unique session ID
 const generateSessionId = () => {
   return crypto.randomBytes(config.security.tokenLength).toString('hex')
+}
+
+const createTokenPair = (userData, sessionId, sessionVersion, req) => {
+  const now = getUnixTimestamp()
+  const tokenData = addFingerprintToTokenData(userData, req)
+  const commonClaims = {
+    sessionId,
+    sessionVersion,
+    iat: now,
+    iss: config.jwt.issuer,
+    aud: config.jwt.audience,
+  }
+  const accessToken = jwt.sign(
+    { ...tokenData, ...commonClaims, type: 'access', jti: crypto.randomUUID() },
+    config.jwt.secret,
+    { expiresIn: config.jwt.accessTokenExpiry, algorithm: 'HS256' }
+  )
+  const refreshToken = jwt.sign(
+    {
+      ...commonClaims,
+      type: 'refresh',
+      jti: crypto.randomUUID(),
+      ...(userData.userId && { userId: userData.userId }),
+      ...(userData.id && { id: userData.id }),
+    },
+    config.jwt.secret,
+    { expiresIn: config.jwt.refreshTokenExpiry, algorithm: 'HS256' }
+  )
+  const decodedRefresh = jwt.decode(refreshToken)
+  const refreshLifetime = decodedRefresh.exp - now
+  return {
+    accessToken,
+    refreshToken,
+    refreshExpiresAt: decodedRefresh.exp,
+    sessionTTL: Math.max(config.redis.sessionTTL, refreshLifetime),
+    refreshTTL: Math.max(config.redis.refreshTokenTTL, refreshLifetime),
+  }
+}
+
+const validateSessionVersion = (version) => {
+  if (!Number.isInteger(version) || version < 1) {
+    throw new TokenError('Invalid token session version')
+  }
 }
 
 /**
@@ -35,72 +128,43 @@ exports.generateToken = async (data = {}, req = null) => {
     // Convert null to empty object for convenience
     const userData = data || {}
 
-    const sessionId = generateSessionId()
-    const now = getUnixTimestamp()
-
-    // Add fingerprinting to token data if available
-    const tokenData = addFingerprintToTokenData(userData, req)
-
-    // Create JWT payload with claims
-    const payload = {
-      ...tokenData,
-      sessionId,
-      iat: now,
-      iss: config.jwt.issuer,
-      aud: config.jwt.audience,
-      type: 'access',
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const sessionId = generateSessionId()
+      const sessionVersion = 1
+      const generationState = await getGenerationState(userData)
+      const tokens = createTokenPair(userData, sessionId, sessionVersion, req)
+      const timestamp = getISOTimestamp()
+      const sessionData = {
+        ...getTokenData(userData),
+        sessionId,
+        sessionVersion,
+        refreshExpiresAt: tokens.refreshExpiresAt,
+        createdAt: timestamp,
+        lastActivity: timestamp,
+        _userGenerations: generationState,
+      }
+      const created = await redisHelper.createSessionAtomic({
+        sessionKey: redisKeys.sessionKey(sessionId),
+        refreshKey: redisKeys.refreshKey(sessionId),
+        indexKeys: getIndexKeys(sessionData),
+        generationKeys: generationState.map(({ key }) => key),
+        generationValues: generationState.map(({ value }) => value),
+        sessionId,
+        sessionData: JSON.stringify(sessionData),
+        sessionTTL: tokens.sessionTTL,
+        refreshHash: hashToken(tokens.refreshToken),
+        refreshTTL: tokens.refreshTTL,
+      })
+      if (created === 1) {
+        return {
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiresIn: config.jwt.accessTokenExpiry,
+          tokenType: 'Bearer',
+        }
+      }
     }
-
-    // Generate access token with expiration
-    const accessToken = jwt.sign(payload, config.jwt.secret, {
-      expiresIn: config.jwt.accessTokenExpiry,
-      algorithm: 'HS256',
-    })
-
-    // Generate refresh token
-    const refreshPayload = {
-      sessionId,
-      // Include user identifier if available (for user session management)
-      ...(userData.userId && { userId: userData.userId }),
-      ...(userData.id && { id: userData.id }),
-      iat: now,
-      iss: config.jwt.issuer,
-      aud: config.jwt.audience,
-      type: 'refresh',
-    }
-
-    const refreshToken = jwt.sign(refreshPayload, config.jwt.secret, {
-      expiresIn: config.jwt.refreshTokenExpiry,
-      algorithm: 'HS256',
-    })
-
-    // Store session data in Redis
-    const sessionData = {
-      ...userData,
-      sessionId,
-      createdAt: getISOTimestamp(),
-      lastActivity: getISOTimestamp(),
-    }
-
-    await redisHelper.setWithExpiry(
-      redisKeys.sessionKey(sessionId),
-      JSON.stringify(sessionData),
-      config.redis.sessionTTL
-    )
-
-    // Store refresh token in Redis
-    await redisHelper.setWithExpiry(
-      redisKeys.refreshKey(sessionId),
-      refreshToken,
-      config.redis.refreshTokenTTL
-    )
-
-    return {
-      accessToken,
-      refreshToken,
-      expiresIn: config.jwt.accessTokenExpiry,
-      tokenType: 'Bearer',
-    }
+    throw new TokenError('Failed to create session because user revocation state changed')
   } catch (error) {
     if (error.name === 'ValidationError' || error.name === 'RedisError') {
       throw error
@@ -118,15 +182,16 @@ exports.generateToken = async (data = {}, req = null) => {
 exports.verifyToken = async (token, req = null) => {
   try {
     validateSecret(config.jwt.secret)
+    validateToken(token)
 
-    // Check if token is blacklisted first
+    // Reject malformed/signature-invalid input before performing a Redis lookup.
+    const decoded = verifyJwtToken(token, 'access')
+    validateSessionVersion(decoded.sessionVersion)
+
     const isBlacklisted = await exports.isTokenBlacklisted(token)
     if (isBlacklisted) {
       throw new TokenError('Token has been revoked')
     }
-
-    // Verify JWT with security checks and type validation
-    const decoded = verifyJwtToken(token, 'access')
 
     // Verify fingerprint if enabled and request context available
     if (req && decoded._fp) {
@@ -145,18 +210,35 @@ exports.verifyToken = async (token, req = null) => {
 
     // Update last activity
     const session = JSON.parse(sessionData)
+    if (session.sessionVersion !== decoded.sessionVersion) {
+      throw new TokenError('Token session has been replaced or revoked')
+    }
     session.lastActivity = getISOTimestamp()
 
-    await redisHelper.setWithExpiry(
-      redisKeys.sessionKey(decoded.sessionId),
-      JSON.stringify(session),
-      config.redis.sessionTTL
+    const sessionTTL = Math.max(
+      config.redis.sessionTTL,
+      Number(session.refreshExpiresAt || 0) - getUnixTimestamp()
     )
+
+    const generationState = getStoredGenerationState(session)
+    const touched = await redisHelper.touchSessionAtomic({
+      sessionKey: redisKeys.sessionKey(decoded.sessionId),
+      indexKeys: getIndexKeys(session),
+      generationKeys: generationState.map(({ key }) => key),
+      generationValues: generationState.map(({ value }) => value),
+      sessionId: session.sessionId,
+      expectedVersion: decoded.sessionVersion,
+      sessionData: JSON.stringify(session),
+      sessionTTL,
+    })
+    if (touched !== 1) {
+      throw new TokenError('Session has been replaced or revoked')
+    }
 
     return {
       valid: true,
       decoded: getCleanUserData(decoded), // Filter out internal fields
-      session,
+      session: getPublicSession(session),
     }
   } catch (error) {
     // Use the standardized JWT error handler if it's a JWT-related error
@@ -189,16 +271,11 @@ exports.verifyToken = async (token, req = null) => {
 exports.refreshToken = async (refreshToken, req = null) => {
   try {
     validateSecret(config.jwt.secret)
+    validateToken(refreshToken, 'Refresh token')
 
     // Verify refresh token with security checks and type validation
     const decoded = verifyJwtToken(refreshToken, 'refresh')
-
-    // Check if refresh token exists in Redis
-    const storedRefreshToken = await redisHelper.get(redisKeys.refreshKey(decoded.sessionId))
-
-    if (!storedRefreshToken || !constantTimeCompare(storedRefreshToken, refreshToken)) {
-      throw new TokenError('Invalid refresh token')
-    }
+    validateSessionVersion(decoded.sessionVersion)
 
     // Get session data
     const sessionData = await redisHelper.get(redisKeys.sessionKey(decoded.sessionId))
@@ -208,14 +285,44 @@ exports.refreshToken = async (refreshToken, req = null) => {
     }
 
     const session = JSON.parse(sessionData)
+    if (session.sessionVersion !== decoded.sessionVersion) {
+      throw new TokenError('Invalid refresh token')
+    }
 
-    // Delete old refresh token (rotation)
-    await redisHelper.del(redisKeys.refreshKey(decoded.sessionId))
+    const tokenData = getTokenData(session)
+    const nextVersion = session.sessionVersion + 1
+    const tokens = createTokenPair(tokenData, session.sessionId, nextVersion, req)
+    const updatedSession = {
+      ...session,
+      sessionVersion: nextVersion,
+      refreshExpiresAt: tokens.refreshExpiresAt,
+      lastActivity: getISOTimestamp(),
+    }
+    const generationState = getStoredGenerationState(session)
+    const rotated = await redisHelper.rotateSessionAtomic({
+      sessionKey: redisKeys.sessionKey(session.sessionId),
+      refreshKey: redisKeys.refreshKey(session.sessionId),
+      indexKeys: getIndexKeys(session),
+      generationKeys: generationState.map(({ key }) => key),
+      generationValues: generationState.map(({ value }) => value),
+      sessionId: session.sessionId,
+      expectedVersion: decoded.sessionVersion,
+      expectedRefreshHash: hashToken(refreshToken),
+      sessionData: JSON.stringify(updatedSession),
+      sessionTTL: tokens.sessionTTL,
+      refreshHash: hashToken(tokens.refreshToken),
+      refreshTTL: tokens.refreshTTL,
+    })
+    if (rotated !== 1) {
+      throw new TokenError('Invalid refresh token or revoked session')
+    }
 
-    // Generate new tokens (with fingerprinting if available)
-    const newTokens = await exports.generateToken(session, req)
-
-    return newTokens
+    return {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresIn: config.jwt.accessTokenExpiry,
+      tokenType: 'Bearer',
+    }
   } catch (error) {
     // Use the standardized JWT error handler if it's a JWT-related error
     if (
@@ -246,17 +353,24 @@ exports.refreshToken = async (refreshToken, req = null) => {
 exports.revokeToken = async (token) => {
   try {
     validateSecret(config.jwt.secret)
+    validateToken(token)
 
     // Verify and decode token
-    const decoded = jwt.verify(token, config.jwt.secret, {
-      algorithms: ['HS256'],
-    })
+    const decoded = verifyJwtToken(token, 'access')
 
-    // Delete session and refresh token from Redis
-    await Promise.all([
-      redisHelper.del(redisKeys.sessionKey(decoded.sessionId)),
-      redisHelper.del(redisKeys.refreshKey(decoded.sessionId)),
-    ])
+    const sessionData = await redisHelper.get(redisKeys.sessionKey(decoded.sessionId))
+    const session = sessionData ? JSON.parse(sessionData) : null
+
+    if (session) {
+      await deleteSession(session)
+    } else {
+      await redisHelper.deleteSessionAtomic({
+        sessionKey: redisKeys.sessionKey(decoded.sessionId),
+        refreshKey: redisKeys.refreshKey(decoded.sessionId),
+        indexKeys: [],
+        sessionId: decoded.sessionId,
+      })
+    }
 
     // Add token to blacklist until it expires
     const exp = decoded.exp - getUnixTimestamp()
@@ -266,7 +380,7 @@ exports.revokeToken = async (token) => {
 
     return { success: true, message: 'Token revoked successfully' }
   } catch (error) {
-    if (error.name === 'JsonWebTokenError') {
+    if (error.name === 'JsonWebTokenError' || error instanceof TokenError) {
       // Token is already invalid, consider it revoked
       return { success: true, message: 'Token already invalid' }
     }
@@ -280,14 +394,9 @@ exports.revokeToken = async (token) => {
  * @returns {Promise<boolean>} True if blacklisted
  */
 exports.isTokenBlacklisted = async (token) => {
-  try {
-    const exists = await redisHelper.exists(redisKeys.blacklistKey(token))
-    return exists === 1
-  } catch (error) {
-    // If Redis fails, consider token valid for safety
-    console.error('Failed to check token blacklist:', error)
-    return false
-  }
+  validateToken(token)
+  const exists = await redisHelper.exists(redisKeys.blacklistKey(token))
+  return exists === 1
 }
 
 /**
@@ -297,33 +406,23 @@ exports.isTokenBlacklisted = async (token) => {
  */
 exports.getUserSessions = async (userIdentifier) => {
   try {
-    const client = redisHelper.getRedisClient()
-    const sessions = []
+    if (typeof userIdentifier !== 'string' || !userIdentifier) {
+      throw new ValidationError('User identifier must be a non-empty string')
+    }
 
-    // Use SCAN instead of KEYS for production safety
-    let cursor = '0'
-    do {
-      const result = await client.scan(cursor, {
-        MATCH: `${config.redis.keyPrefix}session:*`,
-        COUNT: 100,
-      })
-      cursor = result.cursor
-      const keys = result.keys
-
-      for (const key of keys) {
-        const sessionData = await client.get(key)
-        if (sessionData) {
-          const session = JSON.parse(sessionData)
-          if (
-            session.userId === userIdentifier ||
-            session.id === userIdentifier ||
-            session.email === userIdentifier
-          ) {
-            sessions.push(session)
-          }
-        }
-      }
-    } while (cursor !== '0')
+    const indexKey = redisKeys.userSessionsKey(userIdentifier)
+    const sessionIds = await redisHelper.sMembers(indexKey)
+    const sessionValues = await Promise.all(
+      sessionIds.map((sessionId) => redisHelper.get(redisKeys.sessionKey(sessionId)))
+    )
+    const storedSessions = sessionValues.filter(Boolean).map((value) => JSON.parse(value))
+    const sessions = storedSessions.map(getPublicSession)
+    const liveIds = new Set(storedSessions.map((session) => session.sessionId))
+    await Promise.all(
+      sessionIds
+        .filter((sessionId) => !liveIds.has(sessionId))
+        .map((sessionId) => redisHelper.sRem(indexKey, sessionId))
+    )
 
     return sessions
   } catch (error) {
@@ -338,14 +437,15 @@ exports.getUserSessions = async (userIdentifier) => {
  */
 exports.revokeAllUserTokens = async (userIdentifier) => {
   try {
+    if (typeof userIdentifier !== 'string' || !userIdentifier) {
+      throw new ValidationError('User identifier must be a non-empty string')
+    }
+
+    // Linearization point: all earlier sessions become invalid before cleanup.
+    await redisHelper.incrementGeneration(redisKeys.userGenerationKey(userIdentifier))
     const sessions = await exports.getUserSessions(userIdentifier)
 
-    for (const session of sessions) {
-      await Promise.all([
-        redisHelper.del(redisKeys.sessionKey(session.sessionId)),
-        redisHelper.del(redisKeys.refreshKey(session.sessionId)),
-      ])
-    }
+    await Promise.all(sessions.map((session) => deleteSession(session)))
 
     return {
       success: true,

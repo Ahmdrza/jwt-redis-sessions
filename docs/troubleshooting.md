@@ -22,8 +22,8 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 - **Start Redis**:
   - macOS: `brew services start redis`
   - Ubuntu: `sudo systemctl start redis-server`
-  - Docker: `docker run -d -p 6379:6379 redis:7-alpine`
-- **Check connection URL**: Verify `REDIS_URL` in your `.env` file
+  - Docker: `docker run -d -p 6379:6379 redis:7.4.9-alpine`
+- **Check connection URL**: Verify the host-provided `REDIS_URL` environment variable
 
 ### 3. "Token has been revoked" errors
 
@@ -94,8 +94,8 @@ NODE_ENV = development
 # Connect to Redis CLI
 redis-cli
 
-# List all session keys
-KEYS jwt-redis-sessions:*
+# Inspect a development namespace (avoid broad key scans in production)
+SCAN 0 MATCH jwt-redis-sessions:* COUNT 100
 
 # Check specific session
 GET jwt-redis-sessions:session:your-session-id

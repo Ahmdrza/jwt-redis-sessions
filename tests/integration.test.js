@@ -153,15 +153,15 @@ describe('Integration Tests', () => {
       mockNext = jest.fn()
     })
 
-    it('should enforce rate limits', () => {
+    it('should enforce rate limits', async () => {
       // First two requests should pass
-      rateLimitMiddleware(mockReq, mockRes, mockNext)
-      rateLimitMiddleware(mockReq, mockRes, mockNext)
+      await rateLimitMiddleware(mockReq, mockRes, mockNext)
+      await rateLimitMiddleware(mockReq, mockRes, mockNext)
 
       expect(mockNext).toHaveBeenCalledTimes(2)
 
       // Third request should be blocked
-      rateLimitMiddleware(mockReq, mockRes, mockNext)
+      await rateLimitMiddleware(mockReq, mockRes, mockNext)
 
       expect(mockNext).toHaveBeenCalledTimes(2) // Still only 2
       expect(mockRes.status).toHaveBeenCalledWith(429)

@@ -11,7 +11,6 @@ const express = require('express')
 const bcrypt = require('bcrypt') // npm install bcrypt
 const {
   generateToken,
-  verifyToken,
   refreshToken,
   revokeToken,
   revokeAllUserTokens,
@@ -95,17 +94,13 @@ app.post('/login', rateLimit(), async (req, res) => {
 
 // Protected routes
 app.get('/profile', auth, async (req, res) => {
-  // Get user data from token
-  const token = req.headers.authorization?.split(' ')[1]
-  const result = await verifyToken(token)
-
   res.json({
     message: 'Profile data',
-    user: result.decoded,
+    user: req.auth.decoded,
     sessionInfo: {
-      sessionId: result.session.sessionId,
-      createdAt: result.session.createdAt,
-      lastActivity: result.session.lastActivity,
+      sessionId: req.auth.session.sessionId,
+      createdAt: req.auth.session.createdAt,
+      lastActivity: req.auth.session.lastActivity,
     },
   })
 })
@@ -139,15 +134,9 @@ app.post('/logout', async (req, res) => {
   }
 })
 
-app.post('/logout-all', async (req, res) => {
+app.post('/logout-all', auth, async (req, res) => {
   try {
-    const token = req.headers.authorization?.split(' ')[1]
-    if (!token) {
-      return res.status(400).json({ error: 'Token required' })
-    }
-
-    const result = await verifyToken(token)
-    const userIdentifier = result.decoded.userId || result.decoded.id || result.decoded.email
+    const userIdentifier = req.auth.decoded.userId || req.auth.decoded.id || req.auth.decoded.email
 
     if (!userIdentifier) {
       return res.status(400).json({ error: 'User identifier not found' })

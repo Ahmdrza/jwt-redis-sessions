@@ -1,18 +1,24 @@
 {
   "name": "jwt-redis-sessions",
-  "version": "2.0.1",
+  "version": "3.0.0",
   "description": "A secure, production-ready JWT authentication and session management library for Node.js with Redis backend",
   "main": "index.js",
   "types": "index.d.ts",
   "scripts": {
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage",
+    "test:coverage": "jest --coverage --runInBand",
+    "test:redis": "node tests/redis.integration.js",
+    "test:redis:memory": "node tests/run-redis-integration.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
-    "prepublishOnly": "npm test && npm run lint",
-    "prepare": "npm run format"
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "check:package": "node tests/package-content.js",
+    "audit:prod": "npm audit --omit=dev --audit-level=high",
+    "verify": "npm run lint && npm run format:check && npm test -- --runInBand && npm run typecheck && npm run check:package",
+    "prepublishOnly": "npm run verify"
   },
   "keywords": [
     "jwt",
@@ -50,31 +56,45 @@
   },
   "homepage": "https://github.com/Ahmdrza/jwt-redis-sessions#readme",
   "engines": {
-    "node": ">=16.0.0"
+    "node": "^22.0.0 || ^24.0.0"
   },
   "files": [
-    "*.js",
-    "*.d.ts",
+    "index.js",
+    "index.d.ts",
+    "auth.middleware.js",
+    "config.js",
+    "errors.js",
+    "jwt.service.js",
+    "redis.config.js",
+    "utils.js",
+    "validation.util.js",
     "README.md",
+    "SECURITY.md",
+    "MIGRATION.md",
+    "CHANGELOG.md",
+    "docs/**",
     "LICENSE",
     ".env.example"
   ],
   "dependencies": {
-    "dotenv": "^16.4.5",
-    "jsonwebtoken": "^9.0.2",
-    "redis": "^4.7.0"
+    "jsonwebtoken": "^9.0.3",
+    "redis": "^6.1.0"
   },
   "devDependencies": {
-    "@eslint/js": "^9.34.0",
-    "@types/express": "^5.0.0",
-    "@types/jest": "^29.5.14",
-    "@types/jsonwebtoken": "^9.0.7",
-    "@types/node": "^22.10.2",
-    "eslint": "^9.17.0",
-    "jest": "^29.7.0",
-    "prettier": "^3.4.2",
-    "supertest": "^7.0.0",
-    "typescript": "^5.7.2"
+    "@eslint/js": "^10.0.1",
+    "@types/express": "^5.0.6",
+    "@types/jest": "^30.0.0",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^22.20.1",
+    "eslint": "^10.7.0",
+    "jest": "^30.4.2",
+    "prettier": "^3.9.5",
+    "redis-memory-server": "^0.17.0",
+    "supertest": "^7.2.2",
+    "typescript": "^7.0.2"
+  },
+  "redisMemoryServer": {
+    "version": "7.4.9"
   },
   "peerDependencies": {
     "express": ">=4.0.0"

@@ -4,6 +4,58 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.0.0] - 2026-07-18
+
+### Breaking changes
+
+- Existing sessions and plaintext refresh records are incompatible and require reauthentication.
+- Token payloads now use an explicit allowlist and reject nested or sensitive values.
+- Authentication middleware exposes verified state through `req.auth`.
+- The rate limiter is asynchronous and Redis-backed.
+- Import-time dotenv loading and process lifecycle handling have been removed.
+- Supported runtimes are now Node.js 22/24 LTS and Redis 7+.
+
+### Security
+
+- Upgraded the vulnerable `jws` transitive dependency from 3.2.2 to 4.0.1 and refreshed all
+  audited dependencies.
+- Made refresh rotation a versioned Redis compare-and-swap operation, so refresh, logout, and
+  concurrent replay have one unambiguous winner without recreating a revoked session.
+- Added persistent per-user revocation generations and conditional session activity updates so an
+  in-flight verification cannot restore sessions after logout-all.
+- Replaced plaintext refresh storage and full-token blacklist keys with SHA-256 digests.
+- Added strict payload allowlisting, reserved/sensitive-field rejection, primitive-only values, and size limits.
+- Changed blacklist failures to fail closed and moved rate limiting from process memory to Redis.
+
+### Changed
+
+- Removed automatic dotenv loading, signal handlers, and process termination.
+- Added explicit configuration and support for an application-owned connected Redis client.
+- Attached the single middleware verification result to `req.auth`.
+- Replaced keyspace session scans with hashed per-user Redis set indexes.
+- Matched the default session TTL to the seven-day refresh lifetime.
+- Limited supported production runtimes to Node.js 22/24 LTS and Redis 7+.
+- Reworked TypeScript declarations without `any`, including Express request augmentation.
+- Included security, migration, threat-model, and API documentation in the package.
+- Updated direct dependencies to their current supported releases, including node-redis 6.1,
+  Jest 30, ESLint 10, TypeScript 7, jsonwebtoken 9.0.3, Prettier 3.9, and Supertest 7.2.
+
+### Verification
+
+- Added adversarial refresh replay, refresh-versus-logout, verify-versus-logout-all, digest storage,
+  lifecycle, indexing, distributed rate-limit, type, package-content, and real Redis integration
+  checks.
+- Added Node.js 22/24 CI with Redis 7.4.9, lint, tests, type checking, package verification, and
+  production dependency auditing.
+- Added local real-Redis integration testing with `redis-memory-server`, pinned to Redis 7.4.9.
+
+### Fixed
+
+- Made programmatic `REDIS_KEY_PREFIX`, Redis host, and Redis port configuration take effect after
+  importing the package instead of retaining import-time values.
+- Closed concurrency windows that could let an in-flight refresh survive logout or let an
+  in-flight access verification resurrect a session after logout-all.
+
 ## [2.0.1] - 2025-01-25
 
 ### 📦 Package Optimization

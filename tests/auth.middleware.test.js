@@ -33,6 +33,14 @@ describe('Auth Middleware', () => {
       await authMiddleware.auth(mockReq, mockRes, mockNext)
 
       expect(mockNext).toHaveBeenCalled()
+      expect(mockReq.auth).toEqual(
+        expect.objectContaining({
+          token: validToken,
+          valid: true,
+          decoded: expect.objectContaining({ userId: 'user123' }),
+          session: expect.objectContaining({ userId: 'user123' }),
+        })
+      )
       expect(mockRes.status).not.toHaveBeenCalled()
       expect(mockRes.json).not.toHaveBeenCalled()
     })
@@ -125,21 +133,21 @@ describe('Auth Middleware', () => {
       rateLimitMiddleware = authMiddleware.rateLimit(3, 1000) // 3 attempts per second
     })
 
-    it('should allow requests within rate limit', () => {
-      rateLimitMiddleware(mockReq, mockRes, mockNext)
-      rateLimitMiddleware(mockReq, mockRes, mockNext)
-      rateLimitMiddleware(mockReq, mockRes, mockNext)
+    it('should allow requests within rate limit', async () => {
+      await rateLimitMiddleware(mockReq, mockRes, mockNext)
+      await rateLimitMiddleware(mockReq, mockRes, mockNext)
+      await rateLimitMiddleware(mockReq, mockRes, mockNext)
 
       expect(mockNext).toHaveBeenCalledTimes(3)
       expect(mockRes.status).not.toHaveBeenCalled()
     })
 
-    it('should block requests exceeding rate limit', () => {
+    it('should block requests exceeding rate limit', async () => {
       // Make 4 requests (limit is 3)
-      rateLimitMiddleware(mockReq, mockRes, mockNext)
-      rateLimitMiddleware(mockReq, mockRes, mockNext)
-      rateLimitMiddleware(mockReq, mockRes, mockNext)
-      rateLimitMiddleware(mockReq, mockRes, mockNext)
+      await rateLimitMiddleware(mockReq, mockRes, mockNext)
+      await rateLimitMiddleware(mockReq, mockRes, mockNext)
+      await rateLimitMiddleware(mockReq, mockRes, mockNext)
+      await rateLimitMiddleware(mockReq, mockRes, mockNext)
 
       expect(mockNext).toHaveBeenCalledTimes(3)
       expect(mockRes.status).toHaveBeenCalledWith(429)
@@ -149,37 +157,37 @@ describe('Auth Middleware', () => {
       })
     })
 
-    it('should use different counters for different IPs', () => {
+    it('should use different counters for different IPs', async () => {
       const req2 = { ...mockReq, ip: '192.168.1.1' }
 
       // Use up limit for first IP
-      rateLimitMiddleware(mockReq, mockRes, mockNext)
-      rateLimitMiddleware(mockReq, mockRes, mockNext)
-      rateLimitMiddleware(mockReq, mockRes, mockNext)
-      rateLimitMiddleware(mockReq, mockRes, mockNext) // Should be blocked
+      await rateLimitMiddleware(mockReq, mockRes, mockNext)
+      await rateLimitMiddleware(mockReq, mockRes, mockNext)
+      await rateLimitMiddleware(mockReq, mockRes, mockNext)
+      await rateLimitMiddleware(mockReq, mockRes, mockNext) // Should be blocked
 
       // Second IP should still work
-      rateLimitMiddleware(req2, mockRes, mockNext)
+      await rateLimitMiddleware(req2, mockRes, mockNext)
 
       expect(mockNext).toHaveBeenCalledTimes(4) // 3 + 1
       expect(mockRes.status).toHaveBeenCalledTimes(1) // Only first IP blocked
     })
 
-    it('should use default values when no parameters provided', () => {
+    it('should use default values when no parameters provided', async () => {
       const defaultRateLimit = authMiddleware.rateLimit()
 
       // This should not throw and should create a working middleware
       expect(typeof defaultRateLimit).toBe('function')
 
-      defaultRateLimit(mockReq, mockRes, mockNext)
+      await defaultRateLimit(mockReq, mockRes, mockNext)
       expect(mockNext).toHaveBeenCalled()
     })
 
-    it('should fall back to connection.remoteAddress when no IP', () => {
+    it('should fall back to connection.remoteAddress when no IP', async () => {
       mockReq.ip = undefined
       mockReq.connection = { remoteAddress: '127.0.0.1' }
 
-      rateLimitMiddleware(mockReq, mockRes, mockNext)
+      await rateLimitMiddleware(mockReq, mockRes, mockNext)
 
       expect(mockNext).toHaveBeenCalled()
     })
